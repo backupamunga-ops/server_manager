@@ -3,10 +3,14 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "composite": true
+    "composite": true,
+    "isolatedModules": false,
+    "verbatimModuleSyntax": false
   },
   "include": ["src/**/*"]
 }

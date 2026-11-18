@@ -2,25 +2,28 @@
   "name": "@cloudlane/contracts",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./api": {
       "types": "./dist/api/index.d.ts",
-      "import": "./dist/api/index.js"
+      "require": "./dist/api/index.js",
+      "default": "./dist/api/index.js"
     },
     "./agent": {
       "types": "./dist/agent/index.d.ts",
-      "import": "./dist/agent/index.js"
+      "require": "./dist/agent/index.js",
+      "default": "./dist/agent/index.js"
     },
     "./events": {
       "types": "./dist/events/index.d.ts",
-      "import": "./dist/events/index.js"
+      "require": "./dist/events/index.js",
+      "default": "./dist/events/index.js"
     }
   },
   "scripts": {
