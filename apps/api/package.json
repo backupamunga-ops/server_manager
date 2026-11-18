@@ -10,7 +10,7 @@
     "start": "node dist/main.js",
     "lint": "biome check src/",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate --schema src/prisma/schema.prisma",

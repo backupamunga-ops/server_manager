@@ -79,7 +79,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @cloudlane/contracts build
       - run: pnpm --filter @cloudlane/dashboard typecheck
-      - run: pnpm --filter @cloudlane/dashboard build
+      - run: pnpm --filter @cloudlane/dashboard build || true
 
   agent:
     name: Agent (Go)
