@@ -31,6 +31,12 @@ jobs:
   api:
     name: API (NestJS)
     runs-on: ubuntu-latest
+    outputs:
+      step-install: ${{ steps.install.outcome }}
+      step-contracts: ${{ steps.contracts.outcome }}
+      step-prisma: ${{ steps.prisma.outcome }}
+      step-typecheck: ${{ steps.typecheck.outcome }}
+      step-test: ${{ steps.test.outcome }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -58,11 +64,16 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @cloudlane/contracts build
-      - run: pnpm --filter @cloudlane/api prisma:generate
-      - run: pnpm --filter @cloudlane/api typecheck
-      - run: pnpm --filter @cloudlane/api test
+      - id: install
+        run: pnpm install --frozen-lockfile
+      - id: contracts
+        run: pnpm --filter @cloudlane/contracts build
+      - id: prisma
+        run: pnpm --filter @cloudlane/api prisma:generate
+      - id: typecheck
+        run: pnpm --filter @cloudlane/api typecheck
+      - id: test
+        run: pnpm --filter @cloudlane/api test
 
   dashboard:
     name: Dashboard (SvelteKit)
@@ -144,6 +155,13 @@ jobs:
             "jobs": {
               "contracts": "${{ needs.contracts.result }}",
               "api": "${{ needs.api.result }}",
+              "api-steps": {
+                "install": "${{ needs.api.outputs.step-install }}",
+                "contracts-build": "${{ needs.api.outputs.step-contracts }}",
+                "prisma-generate": "${{ needs.api.outputs.step-prisma }}",
+                "typecheck": "${{ needs.api.outputs.step-typecheck }}",
+                "test": "${{ needs.api.outputs.step-test }}"
+              },
               "dashboard": "${{ needs.dashboard.result }}",
               "agent": "${{ needs.agent.result }}",
               "installer-lint": "${{ needs.installer-lint.result }}",
