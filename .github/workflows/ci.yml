@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  checks: read
+  actions: read
 
 jobs:
   contracts:
@@ -117,3 +119,46 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+
+  report-status:
+    name: Report CI Status
+    runs-on: ubuntu-latest
+    needs: [contracts, api, dashboard, agent, installer-lint, biome]
+    if: always()
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Write status file
+        run: |
+          mkdir -p ci-status
+          cat > ci-status/latest.json <<EOF
+          {
+            "commit": "${{ github.sha }}",
+            "ref": "${{ github.ref }}",
+            "runId": "${{ github.run_id }}",
+            "runUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "jobs": {
+              "contracts": "${{ needs.contracts.result }}",
+              "api": "${{ needs.api.result }}",
+              "dashboard": "${{ needs.dashboard.result }}",
+              "agent": "${{ needs.agent.result }}",
+              "installer-lint": "${{ needs.installer-lint.result }}",
+              "biome": "${{ needs.biome.result }}"
+            },
+            "overall": "$([[ "${{ needs.contracts.result }}" == "success" && "${{ needs.api.result }}" == "success" && "${{ needs.dashboard.result }}" == "success" && "${{ needs.agent.result }}" == "success" ]] && echo "pass" || echo "fail")"
+          }
+          EOF
+          cat ci-status/latest.json
+      - name: Push to ci-status branch
+        run: |
+          git config user.name "cloudlane-ci"
+          git config user.email "cloudlane-ci@users.noreply.github.com"
+          git checkout --orphan ci-status
+          git rm -rf . || true
+          git add ci-status/latest.json
+          git commit -m "ci: status for ${{ github.sha }}"
+          git push origin ci-status --force
