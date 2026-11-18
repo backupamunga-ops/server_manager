@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.svelte-kit/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/test-fixtures/*.pem
+secrets.env
+github-app.private-key.pem
+
+# Runtime
+*.log
+logs/
+pids/
+*.pid
+*.seed
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Prisma
+apps/api/src/prisma/migrations/dev.db
+apps/api/src/prisma/migrations/*.db-journal
+
+# Go
+agent/bin/
+agent/vendor/
+
+# Installer state (local dev only)
+installer-state.json
+
+# OS-specific
+*.bak
+*.tmp

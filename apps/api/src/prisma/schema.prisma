@@ -1,0 +1,385 @@
+// Cloudlane Prisma schema — Phase 1 + Phase 2
+// Matches docs/PHASE_1_2_BUILD_PLAN.md section 3.
+// Phase 3+ entities (domain_zones, mailboxes, cron_schedules, storage_buckets)
+// will be added in their phases.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ Installation & Identity ============
+
+model InstallationIdentity {
+  id              String   @id @default(uuid())
+  instanceId      String   @unique
+  version         String
+  createdAt       DateTime @default(now())
+  claimedAt       DateTime?
+  publicKey       String
+  encryptedSecret String
+  schemaVersion   Int      @default(1)
+  claim           InstallationClaim?
+}
+
+enum ClaimStatus {
+  UNCLAIMED
+  CLAIM_ISSUED
+  CLAIM_VERIFIED
+  CLAIM_CONSUMED
+  CLAIM_EXPIRED
+}
+
+model InstallationClaim {
+  id              String      @id @default(uuid())
+  installationId  String      @unique
+  claimHash       String      @unique
+  status          ClaimStatus @default(CLAIM_ISSUED)
+  issuedAt        DateTime    @default(now())
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  attemptCount    Int         @default(0)
+  maxAttempts     Int         @default(5)
+  installation    InstallationIdentity @relation(fields: [installationId], references: [id])
+}
+
+// ============ Users & Auth ============
+
+enum UserRole {
+  OWNER
+}
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  role            UserRole @default(OWNER)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastLoginAt     DateTime?
+  password        PasswordCredential?
+  mfaFactors      MfaFactor[]
+  recoveryCodes   RecoveryCodeHash[]
+  sessions        Session[]
+  apiKeys         ApiKey[]
+  auditEvents     AuditEvent[]
+  ownedWorkspaces Workspace[]
+}
+
+model PasswordCredential {
+  userId          String   @id
+  argon2Hash      String
+  pepperVersion   Int
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+enum MfaType {
+  TOTP
+}
+
+model MfaFactor {
+  id              String   @id @default(uuid())
+  userId          String
+  type            MfaType
+  encryptedSecret String
+  enabledAt       DateTime?
+  verifiedAt      DateTime?
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model RecoveryCodeHash {
+  id              String   @id @default(uuid())
+  userId          String
+  codeHash        String
+  usedAt          DateTime?
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model Session {
+  id              String   @id @default(uuid())
+  userId          String
+  handleHash      String   @unique
+  csrfToken       String
+  createdAt       DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
+  expiresAt       DateTime
+  ip              String?
+  userAgent       String?
+  revokedAt       DateTime?
+  requiresStepUp  Boolean  @default(false)
+  stepUpExpiresAt DateTime?
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model ApiKey {
+  id              String   @id @default(uuid())
+  userId          String
+  name            String
+  keyHash         String   @unique
+  last4           String
+  scopes          String[]
+  createdAt       DateTime @default(now())
+  revokedAt       DateTime?
+  expiresAt       DateTime?
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+// ============ Workspace & Projects ============
+
+model Workspace {
+  id              String   @id @default(uuid())
+  name            String
+  ownerId         String   @unique
+  createdAt       DateTime @default(now())
+  owner           User     @relation(fields: [ownerId], references: [id])
+  projects        Project[]
+}
+
+model Project {
+  id              String   @id @default(uuid())
+  workspaceId     String
+  slug            String
+  name            String
+  description     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  environments    Environment[]
+  services        Service[]
+  @@unique([workspaceId, slug])
+}
+
+enum EnvironmentName {
+  production
+}
+
+model Environment {
+  id              String   @id @default(uuid())
+  projectId       String
+  name            EnvironmentName @default(production)
+  createdAt       DateTime @default(now())
+  project         Project  @relation(fields: [projectId], references: [id])
+  services        Service[]
+  @@unique([projectId, name])
+}
+
+// ============ Services & Deployments ============
+
+enum ServiceKind {
+  application
+}
+
+enum ServiceRole {
+  web
+  api
+  worker
+  static
+}
+
+enum ServiceSource {
+  zip
+  github
+}
+
+model Service {
+  id              String   @id @default(uuid())
+  projectId       String
+  environmentId   String
+  name            String
+  kind            ServiceKind @default(application)
+  role            ServiceRole
+  source          ServiceSource
+  framework       String
+  env             String   @default("production")
+  desiredState    String   @default("running")
+  observedState   String   @default("pending")
+  observedAt      DateTime?
+  activeDeploymentId String? @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  project         Project  @relation(fields: [projectId], references: [id])
+  environment     Environment @relation(fields: [environmentId], references: [id])
+  deployments     Deployment[]
+  variables       ServiceVariable[]
+  githubLink      GithubInstallation?
+  zipSource       ZipSource?
+  volumes         PersistentVolume[]
+  activeDeployment Deployment? @relation("ActiveDeployment", fields: [activeDeploymentId], references: [id])
+  @@unique([projectId, name])
+}
+
+model ServiceVariable {
+  id              String   @id @default(uuid())
+  serviceId       String
+  key             String
+  encryptedValue  String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  service         Service  @relation(fields: [serviceId], references: [id])
+  @@unique([serviceId, key])
+}
+
+model ZipSource {
+  serviceId       String   @id
+  storagePath     String
+  sha256          String
+  fileSize        BigInt
+  entryCount      Int
+  detectedFramework String
+  createdAt       DateTime @default(now())
+  service         Service  @relation(fields: [serviceId], references: [id])
+}
+
+model GithubInstallation {
+  serviceId       String   @id
+  installationId  Int
+  repoFullName    String
+  branch          String   @default("main")
+  autoDeploy      Boolean  @default(true)
+  lastRevision    String?
+  createdAt       DateTime @default(now())
+  service         Service  @relation(fields: [serviceId], references: [id])
+}
+
+enum DeploymentStatus {
+  REQUESTED
+  QUEUED
+  FETCHING
+  VALIDATING
+  DETECTING
+  BUILDING
+  STARTING_CANDIDATE
+  HEALTH_CHECKING
+  ACTIVATING
+  LIVE
+  FAILED
+  CANCELLED
+  TIMED_OUT
+  ROLLED_BACK
+}
+
+model Deployment {
+  id              String   @id @default(uuid())
+  serviceId       String
+  status          DeploymentStatus @default(REQUESTED)
+  stage           Int      @default(0)
+  revision        String
+  imageDigest     String?
+  errorMessage    String?
+  startedAt       DateTime @default(now())
+  finishedAt      DateTime?
+  previousDeploymentId String?
+  service         Service  @relation(fields: [serviceId], references: [id])
+  activeFor       Service? @relation("ActiveDeployment")
+  events          DeploymentEvent[]
+  @@index([serviceId, startedAt])
+}
+
+enum DeploymentEventLevel {
+  info
+  success
+  warning
+  error
+}
+
+model DeploymentEvent {
+  id              String   @id @default(uuid())
+  deploymentId    String
+  stage           DeploymentStatus
+  level           DeploymentEventLevel
+  message         String
+  createdAt       DateTime @default(now())
+  deployment      Deployment @relation(fields: [deploymentId], references: [id])
+  @@index([deploymentId, createdAt])
+}
+
+// ============ Persistent Volumes ============
+
+model PersistentVolume {
+  id              String   @id @default(uuid())
+  serviceId       String
+  name            String
+  mountPath       String
+  quotaMB         Int
+  createdAt       DateTime @default(now())
+  service         Service  @relation(fields: [serviceId], references: [id])
+  @@unique([serviceId, name])
+}
+
+// ============ Audit & Operations ============
+
+enum AuditAction {
+  CLAIM_ISSUED
+  CLAIM_VERIFIED
+  CLAIM_FAILED
+  OWNER_CREATED
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  MFA_ENROLLED
+  MFA_VERIFIED
+  RECOVERY_CODE_USED
+  SESSION_REVOKED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  PROJECT_CREATED
+  PROJECT_DELETED
+  SERVICE_CREATED
+  DEPLOYMENT_STARTED
+  DEPLOYMENT_LIVE
+  DEPLOYMENT_FAILED
+  DEPLOYMENT_ROLLED_BACK
+  VARIABLE_ADDED
+  VARIABLE_REMOVED
+  AGENT_COMMAND_SENT
+  AGENT_COMMAND_REJECTED
+}
+
+model AuditEvent {
+  id              String   @id @default(uuid())
+  actorUserId     String?
+  actorType       String
+  workspaceId     String?
+  resourceType    String?
+  resourceId      String?
+  action          AuditAction
+  status          String
+  ipAddress       String?
+  correlationId   String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  user            User?    @relation(fields: [actorUserId], references: [id])
+  @@index([action, createdAt])
+  @@index([resourceType, resourceId])
+}
+
+enum OperationStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Operation {
+  id              String   @id @default(uuid())
+  idempotencyKey  String   @unique
+  resourceType    String
+  resourceId      String
+  operationType   String
+  status          OperationStatus @default(QUEUED)
+  attempts        Int      @default(0)
+  maxAttempts     Int      @default(3)
+  lastError       String?
+  payload         Json
+  createdAt       DateTime @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  @@index([resourceType, resourceId, status])
+}

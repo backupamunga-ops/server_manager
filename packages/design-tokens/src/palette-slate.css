@@ -1,0 +1,19 @@
+/* Slate palette — applied via <html data-palette="slate"> */
+:root[data-palette='slate']:not(.dark) {
+  --bg: #d9d9d9; --raised: #ebebeb; --overlay: #f4f4f4; --sunken: #cececf;
+  --text: #0f172a; --secondary: #3f4654; --muted: #636873; --disabled: #636873;
+  --border: #84868f; --border-default: #84878f; --border-strong: #84878f;
+  --primary: #333333; --primary-hover: #444445; --primary-active: #2c2d31;
+  --primary-tint: #d3d3d3;
+  --palette-button: #333333; --palette-button-text: #f1f5f9; --palette-on-tint: #333333;
+  --focus-ring: #333333;
+}
+:root[data-palette='slate'].dark {
+  --bg: #141621; --raised: #262732; --overlay: #353740; --sunken: #10121f;
+  --text: #d3d3d3; --secondary: #adadb0; --muted: #919296; --disabled: #919296;
+  --border: #707179; --border-default: #6f7077; --border-strong: #6f7077;
+  --primary: #8c8e90; --primary-hover: #818387; --primary-active: #9a9c9d;
+  --primary-tint: #282932;
+  --palette-button: #8c8e90; --palette-button-text: #0f172a; --palette-on-tint: #8e9092;
+  --focus-ring: #707172;
+}

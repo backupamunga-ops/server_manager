@@ -1,0 +1,36 @@
+{
+  "name": "cloudlane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudlane — self-hosted VPS infrastructure platform",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter=./apps/* --filter=./packages/* build",
+    "build:api": "pnpm --filter @cloudlane/api build",
+    "build:dashboard": "pnpm --filter @cloudlane/dashboard build",
+    "build:contracts": "pnpm --filter @cloudlane/contracts build",
+    "dev:api": "pnpm --filter @cloudlane/api dev",
+    "dev:dashboard": "pnpm --filter @cloudlane/dashboard dev",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @cloudlane/tests-e2e test",
+    "prisma:generate": "pnpm --filter @cloudlane/api prisma:generate",
+    "prisma:migrate": "pnpm --filter @cloudlane/api prisma:migrate",
+    "openapi:gen": "pnpm --filter @cloudlane/api openapi:gen",
+    "agent:build": "cd agent && go build -o ../build/cloudlane-agent ./cmd/cloudlane-agent",
+    "agent:test": "cd agent && go test ./...",
+    "installer:lint": "shellcheck installer/**/*.sh"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "typescript": "5.6.3"
+  }
+}

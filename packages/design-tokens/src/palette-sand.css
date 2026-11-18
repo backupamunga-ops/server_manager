@@ -1,0 +1,19 @@
+/* Sand palette */
+:root[data-palette='sand']:not(.dark) {
+  --bg: #f8e5ce; --raised: #fbf1e6; --overlay: #fdf7f0; --sunken: #ebdac5;
+  --text: #0f172a; --secondary: #434753; --muted: #696a71; --disabled: #696a71;
+  --border: #8c8a8c; --border-default: #8d8a8c; --border-strong: #8d8a8c;
+  --primary: #8b4513; --primary-hover: #945528; --primary-active: #723c18;
+  --primary-tint: #ecdbcb;
+  --palette-button: #8b4513; --palette-button-text: #f1f5f9; --palette-on-tint: #8b4513;
+  --focus-ring: #8b4513;
+}
+:root[data-palette='sand'].dark {
+  --bg: #331d16; --raised: #422e27; --overlay: #503d37; --sunken: #271716;
+  --text: #f7e1c7; --secondary: #cfbaa4; --muted: #b29d8a; --disabled: #b29d8a;
+  --border: #897a71; --border-default: #8b796d; --border-strong: #8b796d;
+  --primary: #b9947a; --primary-hover: #aa8973; --primary-active: #c5a389;
+  --primary-tint: #503223;
+  --palette-button: #b9947a; --palette-button-text: #0f172a; --palette-on-tint: #bd9c84;
+  --focus-ring: #a4714c;
+}

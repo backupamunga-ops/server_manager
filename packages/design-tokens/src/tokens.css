@@ -1,0 +1,70 @@
+/* Cloudlane design tokens — Original palette (teal/slate) as default. */
+
+:root {
+  --primary: #0d9488;
+  --primary-hover: #14b8a6;
+  --primary-active: #0f766e;
+  --primary-tint: #f0fdfa;
+  --bg: #ffffff;
+  --raised: #f8fafc;
+  --overlay: #ffffff;
+  --sunken: #f1f5f9;
+  --text: #0f172a;
+  --secondary: #334155;
+  --muted: #64748b;
+  --disabled: #94a3b8;
+  --border: #e2e8f0;
+  --border-default: #cbd5e1;
+  --border-strong: #94a3b8;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --info: #2563eb;
+  --success-bg: #f0fdf4;
+  --warning-bg: #fffbeb;
+  --danger-bg: #fef2f2;
+  --info-bg: #eff6ff;
+  --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --palette-button: #0d9488;
+  --palette-button-text: #ffffff;
+  --palette-on-tint: #0d9488;
+  --focus-ring: #0d9488;
+  color-scheme: light;
+}
+
+:root.dark {
+  --primary: #2dd4bf;
+  --primary-hover: #14b8a6;
+  --primary-active: #0f766e;
+  --primary-tint: #134e4a;
+  --bg: #020617;
+  --raised: #0f172a;
+  --overlay: #1e293b;
+  --sunken: #020617;
+  --text: #f1f5f9;
+  --secondary: #cbd5e1;
+  --muted: #94a3b8;
+  --disabled: #475569;
+  --border: #1e293b;
+  --border-default: #334155;
+  --border-strong: #475569;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+  --success-bg: #052e16;
+  --warning-bg: #451a03;
+  --danger-bg: #450a0a;
+  --info-bg: #172554;
+  --shadow: none;
+  --shadow-md: none;
+  --palette-button: #2dd4bf;
+  --palette-button-text: #020617;
+  --palette-on-tint: #2dd4bf;
+  --focus-ring: #2dd4bf;
+  color-scheme: dark;
+}
+
+/* Palette variants are loaded via data-palette attribute on <html>.
+   See packages/design-tokens/src/palette-*.css for the four non-default palettes. */
