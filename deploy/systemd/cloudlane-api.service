@@ -1,0 +1,44 @@
+[Unit]
+Description=Cloudlane API (NestJS)
+After=docker.service
+Requires=docker.service
+After=cloudlane-postgres.service
+Requires=cloudlane-postgres.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/cloudlane/api.env
+ExecStartPre=-/usr/bin/docker rm -f cloudlane-api
+ExecStart=/usr/bin/docker run \
+  --name cloudlane-api \
+  --network cloudlane-internal \
+  --restart=no \
+  -e DATABASE_URL \
+  -e MASTER_KEY \
+  -e PEPPER_VERSION=1 \
+  -e PASSWORD_PEPPER \
+  -e NODE_ENV=production \
+  -e PORT=3000 \
+  -e CLAIM_TTL_MINUTES=20 \
+  -e CLAIM_MAX_ATTEMPTS=5 \
+  -e LOGIN_RATE_LIMIT_PER_MINUTE=10 \
+  -e SESSION_TTL_MINUTES=10080 \
+  -e SESSION_STEPUP_TTL_MINUTES=5 \
+  -e AGENT_SOCKET_PATH=/run/cloudlane/agent.sock \
+  -e AGENT_HMAC_KEY \
+  -e S3_ENDPOINT=http://cloudlane-garage:3900 \
+  -e S3_ACCESS_KEY \
+  -e S3_SECRET_KEY \
+  -e S3_BUCKET_UPLOADS=cloudlane-uploads \
+  -e S3_BUCKET_DEPLOYMENTS=cloudlane-deployments \
+  -e S3_REGION=garage \
+  -e GITHUB_APP_WEBHOOK_SECRET \
+  -v /run/cloudlane:/run/cloudlane \
+  ghcr.io/backupamunga-ops/server_manager/cloudlane-api:latest
+ExecStop=/usr/bin/docker stop cloudlane-api
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

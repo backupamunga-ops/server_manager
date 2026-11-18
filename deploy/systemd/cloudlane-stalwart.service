@@ -1,0 +1,26 @@
+[Unit]
+Description=Cloudlane Stalwart Mail Server
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+ExecStartPre=-/usr/bin/docker rm -f cloudlane-stalwart
+ExecStartPre=/bin/mkdir -p /var/lib/cloudlane/mail /etc/cloudlane/stalwart
+ExecStart=/usr/bin/docker run \
+  --name cloudlane-stalwart \
+  --network cloudlane-internal \
+  --restart=no \
+  -p 25:25 \
+  -p 587:587 \
+  -p 993:993 \
+  -v /etc/cloudlane/stalwart:/etc/stalwart:ro \
+  -v /var/lib/cloudlane/mail:/var/lib/stalwart \
+  ghcr.io/backupamunga-ops/server_manager/cloudlane-stalwart:latest
+ExecStop=/usr/bin/docker stop cloudlane-stalwart
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

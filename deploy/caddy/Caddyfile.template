@@ -1,0 +1,72 @@
+# Cloudlane Caddyfile template
+# Rendered by installer/stages/07_deploy_caddy.sh and 10_configure_https.sh
+#
+# Placeholders (replaced by installer):
+#   {{PUBLIC_IP4}}      — detected public IPv4
+#   {{PUBLIC_IP6}}      — detected public IPv6 (or empty)
+#   {{DASHBOARD_ROOT}}  — path to static dashboard files
+#   {{ACME_PROFILE}}    — "shortlived" for production, "" for initial internal cert
+
+{
+  admin off
+  auto_https disable_certs
+  persist_config /var/lib/cloudlane/caddy/
+  {{#if ACME_ENABLED}}
+  acme_ca https://acme-v02.api.letsencrypt.org/directory
+  {{/if}}
+}
+
+# Panel: HTTPS on public IP
+https://{{PUBLIC_IP4}}{{#if PUBLIC_IP6}}, https://{{PUBLIC_IP6}}{{/if}} {
+  {{#if ACME_ENABLED}}
+  tls {
+    issuer acme {
+      disable_http_challenge
+      enable_tls_alpn_challenge
+    }
+  }
+  {{else}}
+  tls internal
+  {{/if}}
+
+  # API proxy
+  handle /api/v1/* {
+    reverse_proxy localhost:3000
+  }
+
+  # Dashboard static files
+  handle {
+    root * {{DASHBOARD_ROOT}}
+    try_files {path} /index.html
+    file_server
+  }
+
+  # Security headers
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options nosniff
+    X-Frame-Options DENY
+    Referrer-Policy strict-origin-when-cross-origin
+    Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+  }
+
+  log {
+    output file /var/log/cloudlane/caddy-access.log {
+      roll_size 10MB
+      roll_keep 5
+    }
+    format json
+  }
+}
+
+# Stalwart SMTP/IMAP bind directly to ports 25/587/993, not proxied through Caddy.
+# Garage S3 is on the internal network only (127.0.0.1:3900), not proxied.
+
+# Service routes are added dynamically by the agent on deployment activation.
+# Example (added by agent when a service goes live):
+# :443, {{PUBLIC_IP4}} {
+#   @service host myapp.apps.example.com
+#   handle @service {
+#     reverse_proxy localhost:{{SERVICE_PORT}}
+#   }
+# }

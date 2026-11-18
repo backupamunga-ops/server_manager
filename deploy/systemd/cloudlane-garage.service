@@ -1,0 +1,25 @@
+[Unit]
+Description=Cloudlane Garage Object Storage
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/cloudlane/garage.env
+ExecStartPre=-/usr/bin/docker rm -f cloudlane-garage
+ExecStartPre=/bin/mkdir -p /var/lib/cloudlane/garage-data /var/lib/cloudlane/garage-meta /etc/cloudlane/garage
+ExecStart=/usr/bin/docker run \
+  --name cloudlane-garage \
+  --network cloudlane-internal \
+  --restart=no \
+  -v /etc/cloudlane/garage/config.toml:/etc/garage/config.toml:ro \
+  -v /var/lib/cloudlane/garage-data:/var/lib/garage/data \
+  -v /var/lib/cloudlane/garage-meta:/var/lib/garage/meta \
+  dxflrs/garage:v1.0.1
+ExecStop=/usr/bin/docker stop cloudlane-garage
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

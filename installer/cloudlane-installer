@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+# Cloudlane Installer — master script
+#
+# Usage:
+#   sudo cloudlane-installer install    — run all stages
+#   sudo cloudlane-installer resume     — resume from last failed stage
+#   sudo cloudlane-installer repair     — run diagnostics and repair
+#   sudo cloudlane-installer status     — show installation status
+#   sudo cloudlane-installer upgrade    — upgrade to new version
+#   sudo cloudlane-installer uninstall  — remove Cloudlane (dry-run by default)
+#   sudo cloudlane-installer regenerate-claim — generate new claim code
+#
+set -euo pipefail
+
+INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STAGES_DIR="$INSTALLER_DIR/stages"
+
+# Colors
+if [[ -t 1 ]]; then
+  RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; BLUE=$'\e[34m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
+else
+  RED=""; GREEN=""; YELLOW=""; BLUE=""; BOLD=""; RESET=""
+fi
+
+log_info()  { printf '%s[INFO]%s %s\n' "$BLUE" "$RESET" "$*"; }
+log_ok()    { printf '%s[ OK ]%s %s\n' "$GREEN" "$RESET" "$*"; }
+log_warn()  { printf '%s[WARN]%s %s\n' "$YELLOW" "$RESET" "$*"; }
+log_fail()  { printf '%s[FAIL]%s %s\n' "$RED" "$RESET" "$*" >&2; }
+
+STAGES=(
+  "00_preflight.sh"
+  "01_prepare_host.sh"
+  "02_install_docker.sh"
+  "03_deploy_postgres.sh"
+  "04_deploy_api.sh"
+  "05_deploy_dashboard.sh"
+  "06_deploy_agent.sh"
+  "07_deploy_caddy.sh"
+  "08_deploy_stalwart.sh"
+  "09_deploy_garage.sh"
+  "10_configure_https.sh"
+  "11_print_claim.sh"
+  "12_finalize.sh"
+)
+
+require_root() {
+  if [[ $EUID -ne 0 ]]; then
+    log_fail "This command must be run as root (use sudo)."
+    exit 1
+  fi
+}
+
+run_stage() {
+  local stage_script="$1"
+  local stage_name="${stage_script%.sh}"
+  local stage_path="$STAGES_DIR/$stage_script"
+
+  if [[ ! -x "$stage_path" ]]; then
+    chmod +x "$stage_path" 2>/dev/null || true
+  fi
+
+  printf '\n%s[%s]%s\n' "$BLUE" "$stage_script" "$RESET"
+
+  if bash "$stage_path"; then
+    log_ok "Stage $stage_name completed"
+    return 0
+  else
+    log_fail "Stage $stage_name failed"
+    return 1
+  fi
+}
+
+cmd_install() {
+  require_root
+  echo "${BOLD}Cloudlane Installer — Install${RESET}"
+  echo ""
+
+  for stage in "${STAGES[@]}"; do
+    if ! run_stage "$stage"; then
+      echo ""
+      log_fail "Installation stopped at stage $stage"
+      log_info "Fix the issue and run: sudo cloudlane-installer resume"
+      exit 1
+    fi
+  done
+
+  echo ""
+  log_ok "All stages completed."
+}
+
+cmd_resume() {
+  require_root
+  echo "${BOLD}Cloudlane Installer — Resume${RESET}"
+  echo ""
+
+  STATE_FILE="/var/lib/cloudlane/installer-state.json"
+  if [[ ! -f "$STATE_FILE" ]]; then
+    log_fail "No installation state found. Run: sudo cloudlane-installer install"
+    exit 1
+  fi
+
+  for stage in "${STAGES[@]}"; do
+    run_stage "$stage" || {
+      log_fail "Resume stopped at stage $stage"
+      exit 1
+    }
+  done
+
+  log_ok "Resume completed."
+}
+
+cmd_status() {
+  echo "${BOLD}Cloudlane Installation Status${RESET}"
+  echo ""
+
+  if [[ -f /etc/cloudlane/installed.marker ]]; then
+    cat /etc/cloudlane/installed.marker | python3 -m json.tool 2>/dev/null || cat /etc/cloudlane/installed.marker
+  else
+    log_warn "Installation not found or not complete."
+  fi
+
+  echo ""
+  echo "${BOLD}Services:${RESET}"
+  for svc in cloudlane-postgres cloudlane-api cloudlane-agent cloudlane-stalwart cloudlane-garage caddy; do
+    status=$(systemctl is-active "$svc" 2>/dev/null || echo "not-installed")
+    if [[ "$status" == "active" ]]; then
+      printf '  %s✓%s %s\n' "$GREEN" "$RESET" "$svc"
+    else
+      printf '  %s✗%s %s (%s)\n' "$RED" "$RESET" "$svc" "$status"
+    fi
+  done
+
+  echo ""
+  echo "${BOLD}Stage journal:${RESET}"
+  STATE_FILE="/var/lib/cloudlane/installer-state.json"
+  if [[ -f "$STATE_FILE" ]]; then
+    python3 -c "
+import json
+with open('$STATE_FILE') as f:
+    state = json.load(f)
+for stage, info in state.get('stages', {}).items():
+    status = info.get('status', 'unknown')
+    icon = '✓' if status == 'completed' else '✗'
+    print(f'  {icon} {stage} — {status}')
+" 2>/dev/null || cat "$STATE_FILE"
+  else
+    echo "  No state file found."
+  fi
+}
+
+cmd_doctor() {
+  require_root
+  echo "${BOLD}Cloudlane Doctor — Diagnostics${RESET}"
+  echo ""
+
+  local issues=0
+
+  # Check Docker
+  if docker info &>/dev/null; then
+    log_ok "Docker is running"
+  else
+    log_fail "Docker is not running"
+    issues=$((issues + 1))
+  fi
+
+  # Check each service
+  for svc in cloudlane-postgres cloudlane-api cloudlane-agent cloudlane-stalwart cloudlane-garage caddy; do
+    status=$(systemctl is-active "$svc" 2>/dev/null || echo "not-installed")
+    if [[ "$status" == "active" ]]; then
+      log_ok "$svc is active"
+    else
+      log_fail "$svc is $status"
+      issues=$((issues + 1))
+    fi
+  done
+
+  # Check disk space
+  local disk_avail
+  disk_avail=$(df -m /var | awk 'NR==2 {print $4}')
+  if (( disk_avail > 1024 )); then
+    log_ok "Disk space: ${disk_avail} MB available on /var"
+  else
+    log_warn "Low disk space: ${disk_avail} MB on /var"
+  fi
+
+  # Check memory
+  local mem_avail
+  mem_avail=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+  if (( mem_avail > 200000 )); then
+    log_ok "Memory: $((mem_avail / 1024)) MB available"
+  else
+    log_warn "Low memory: $((mem_avail / 1024)) MB available"
+  fi
+
+  # Check API health
+  if curl -fsS http://localhost:3000/health &>/dev/null; then
+    log_ok "API health check passing"
+  else
+    log_fail "API not responding on health check"
+    issues=$((issues + 1))
+  fi
+
+  # Check HTTPS
+  source /etc/cloudlane/.public_ips 2>/dev/null || true
+  if [[ -n "${PUBLIC_IP4:-}" ]]; then
+    if curl -fsS "https://$PUBLIC_IP4/health" &>/dev/null; then
+      log_ok "HTTPS is working"
+    else
+      log_warn "HTTPS check failed (cert may still be issuing)"
+    fi
+  fi
+
+  echo ""
+  if (( issues > 0 )); then
+    log_fail "$issues issue(s) found. Run: sudo cloudlane-installer repair"
+  else
+    log_ok "All checks passed."
+  fi
+}
+
+cmd_repair() {
+  require_root
+  echo "${BOLD}Cloudlane Installer — Repair${RESET}"
+  echo ""
+  log_info "Running doctor diagnostics first..."
+  cmd_doctor
+  echo ""
+  log_info "Attempting to restart failed services..."
+  for svc in cloudlane-postgres cloudlane-api cloudlane-agent cloudlane-stalwart cloudlane-garage caddy; do
+    status=$(systemctl is-active "$svc" 2>/dev/null || echo "not-installed")
+    if [[ "$status" != "active" ]]; then
+      log_info "Restarting $svc..."
+      systemctl restart "$svc" 2>/dev/null && log_ok "Restarted: $svc" || log_fail "Failed to restart: $svc"
+    fi
+  done
+}
+
+cmd_regenerate_claim() {
+  require_root
+  echo "${BOLD}Cloudlane Installer — Regenerate Claim Code${RESET}"
+  echo ""
+  bash "$STAGES_DIR/11_print_claim.sh" || true
+  # Force re-run by clearing the state
+  python3 -c "
+import json
+with open('/var/lib/cloudlane/installer-state.json') as f:
+    state = json.load(f)
+state['stages'].pop('11_print_claim', None)
+with open('/var/lib/cloudlane/installer-state.json', 'w') as f:
+    json.dump(state, f, indent=2)
+" 2>/dev/null || true
+  bash "$STAGES_DIR/11_print_claim.sh"
+}
+
+cmd_upgrade() {
+  require_root
+  echo "${BOLD}Cloudlane Installer — Upgrade${RESET}"
+  echo ""
+  log_info "Pulling latest images..."
+  for img in cloudlane-api cloudlane-dashboard cloudlane-agent; do
+    docker pull "ghcr.io/backupamunga-ops/server_manager/$img:latest" && log_ok "Pulled: $img"
+  done
+  echo ""
+  log_info "Restarting services..."
+  for svc in cloudlane-api cloudlane-agent; do
+    systemctl restart "$svc" && log_ok "Restarted: $svc"
+  done
+  echo ""
+  log_ok "Upgrade complete. Dashboard will be re-extracted in next stage."
+  log_info "Run: sudo cloudlane-installer resume"
+}
+
+cmd_uninstall() {
+  require_root
+  echo "${BOLD}${RED}Cloudlane Installer — Uninstall (DRY RUN)${RESET}"
+  echo ""
+  echo "This would remove:"
+  echo "  - All Docker containers (cloudlane-*)"
+  echo "  - All Docker volumes (cloudlane-*)"
+  echo "  - /etc/cloudlane/"
+  echo "  - /var/lib/cloudlane/"
+  echo "  - /var/log/cloudlane/"
+  echo "  - /opt/cloudlane/"
+  echo "  - All systemd units"
+  echo "  - Caddy configuration"
+  echo ""
+  echo "To actually uninstall: sudo cloudlane-installer uninstall --purge"
+  echo ""
+  echo "${RED}WARNING: This will delete ALL data including databases,${RESET}"
+  echo "${RED}mail, and uploaded files. This cannot be undone.${RESET}"
+}
+
+usage() {
+  cat <<EOF
+${BOLD}Cloudlane Installer${RESET}
+
+Usage: cloudlane-installer <command>
+
+Commands:
+  install            Run full installation (all stages)
+  resume             Resume from last failed stage
+  status             Show installation status
+  doctor             Run diagnostics
+  repair             Attempt to restart failed services
+  upgrade            Pull latest images and restart
+  regenerate-claim   Generate a new one-time claim code
+  uninstall          Show what would be removed (dry-run)
+
+Options:
+  --help, -h         Show this help
+
+Environment:
+  The installer must be run as root (sudo).
+EOF
+}
+
+# Main
+case "${1:-}" in
+  install)         cmd_install ;;
+  resume)          cmd_resume ;;
+  status)          cmd_status ;;
+  doctor)          cmd_doctor ;;
+  repair)          cmd_repair ;;
+  upgrade)         cmd_upgrade ;;
+  regenerate-claim) cmd_regenerate_claim ;;
+  uninstall)       cmd_uninstall ;;
+  --help|-h|"")    usage ;;
+  *) log_fail "Unknown command: $1"; usage; exit 1 ;;
+esac

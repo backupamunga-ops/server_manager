@@ -1,0 +1,31 @@
+[Unit]
+Description=Cloudlane PostgreSQL
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/cloudlane/postgres.env
+ExecStartPre=-/usr/bin/docker rm -f cloudlane-postgres
+ExecStartPre=/usr/bin/docker volume create cloudlane-postgres-data
+ExecStart=/usr/bin/docker run \
+  --name cloudlane-postgres \
+  --network cloudlane-internal \
+  --restart=no \
+  -e POSTGRES_USER \
+  -e POSTGRES_PASSWORD \
+  -e POSTGRES_DB \
+  -v cloudlane-postgres-data:/var/lib/postgresql/data \
+  -v /opt/cloudlane/releases/current/deploy/docker/postgres-tuning.conf:/docker-entrypoint-initdb.d/00-tuning.sql:ro \
+  --health-cmd="pg_isready -U $POSTGRES_USER -d $POSTGRES_DB" \
+  --health-interval=10s \
+  --health-timeout=5s \
+  --health-retries=5 \
+  ghcr.io/backupamunga-ops/server_manager/cloudlane-postgres:latest
+ExecStop=/usr/bin/docker stop cloudlane-postgres
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
