@@ -20,7 +20,7 @@ export interface ClaimRequest {
 }
 
 export interface ClaimResponse {
-  claimToken: string;
+  token: string;
   expiresAt: string; // RFC3339
 }
 
