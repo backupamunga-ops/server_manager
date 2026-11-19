@@ -60,8 +60,10 @@ export class CronRunnerService implements OnApplicationBootstrap, OnModuleDestro
   private isDue(expr: string, timezone: string, minuteMs: number): boolean {
     const offset = this.tzOffsetMinutes(timezone, new Date(minuteMs));
     const wall = new Date(minuteMs - offset * 60_000);
-    const it = parseExpression(expr, { currentDate: wall });
-    return it.prev().getTime() === wall.getTime();
+    // Robust across parser inclusivity semantics: the next occurrence AFTER
+    // (wall - 1ms) must be exactly the wall minute.
+    const it = parseExpression(expr, { currentDate: new Date(wall.getTime() - 1) });
+    return it.next().getTime() === wall.getTime();
   }
 
   private async tick(): Promise<void> {
