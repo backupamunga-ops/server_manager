@@ -834,6 +834,10 @@ export class WorkspaceService {
         await this.prisma.service.update({ where: { id: s.id }, data: { activeDeploymentId: null } });
         // rows owned by the service (raw SQL: tolerant of tables that may not exist yet)
         for (const stmt of [
+          'DELETE FROM "DeploymentEvent" WHERE "deploymentId" IN (SELECT id FROM "Deployment" WHERE "serviceId" = $1)',
+          'DELETE FROM "Deployment" WHERE "serviceId" = $1',
+          'DELETE FROM "DnsRecord" WHERE "serviceId" = $1',
+          'DELETE FROM "PersistentVolume" WHERE "serviceId" = $1',
           'DELETE FROM "StorageObject" WHERE "bucketId" IN (SELECT id FROM "Bucket" WHERE "storageServiceId" = $1)',
           'DELETE FROM "Bucket" WHERE "storageServiceId" = $1',
           'DELETE FROM "StorageGrant" WHERE "serviceId" = $1',
@@ -843,7 +847,6 @@ export class WorkspaceService {
           'DELETE FROM "ServiceVariable" WHERE "serviceId" = $1',
           'DELETE FROM "CronRun" WHERE "serviceId" = $1',
           'DELETE FROM "CronJob" WHERE "serviceId" = $1',
-          'DELETE FROM "Deployment" WHERE "serviceId" = $1',
         ]) {
           await this.prisma.$executeRawUnsafe(stmt, s.id).catch(() => null);
         }
