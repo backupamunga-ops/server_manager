@@ -453,7 +453,7 @@ export class ServicesService {
     return {
       tool: 'phpMyAdmin',
       action: '',
-      openUrl: `https://pma.billucsolutions.co.ke/index.php?route=/&t=${payload}.${sig}`,
+      openUrl: `https://pma.billucsolutions.co.ke/cloudlane/sso.php?t=${payload}.${sig}`,
       fields: {},
       database: databaseName,
       host,
