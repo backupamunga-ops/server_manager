@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/backupamunga-ops/cloudlane/agent/internal/caddy"
+	"github.com/backupamunga-ops/cloudlane/agent/internal/commands"
+	"github.com/backupamunga-ops/cloudlane/agent/internal/docker"
 	"github.com/backupamunga-ops/cloudlane/agent/internal/identity"
 )
 
@@ -42,9 +45,9 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 	}
 }
 
-func (s *Server) handleConn(_ context.Context, conn net.Conn) {
+func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	conn.SetDeadline(time.Now().Add(60 * time.Second))
 	scanner := bufio.NewScanner(conn)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -57,65 +60,153 @@ func (s *Server) handleConn(_ context.Context, conn net.Conn) {
 			})
 			continue
 		}
-		resp := s.processCommand(&cmd)
+		resp := s.processCommand(ctx, &cmd)
 		s.writeResponse(conn, resp)
 	}
 }
 
-func (s *Server) processCommand(cmd *Command) Response {
+func (s *Server) processCommand(ctx context.Context, cmd *Command) Response {
 	now := time.Now().UTC()
 	nowStr := now.Format(time.RFC3339)
 
+	// Validation chain
 	if cmd.Version != 1 {
-		return Response{CommandID: cmd.CommandID, Status: "rejected",
-			Error: &ResponseError{Code: ErrPayloadInvalid, Message: "unsupported protocol version"},
-			ObservedAt: nowStr}
+		return s.reject(cmd, ErrPayloadInvalid, "unsupported protocol version", nowStr)
 	}
 	if cmd.ServerID != s.ident.InstanceID {
-		return Response{CommandID: cmd.CommandID, Status: "rejected",
-			Error: &ResponseError{Code: ErrServerIDMismatch, Message: "serverId mismatch"},
-			ObservedAt: nowStr}
+		return s.reject(cmd, ErrServerIDMismatch, "serverId mismatch", nowStr)
 	}
 	expiresAt, err := time.Parse(time.RFC3339, cmd.ExpiresAt)
 	if err != nil {
-		return Response{CommandID: cmd.CommandID, Status: "rejected",
-			Error: &ResponseError{Code: ErrPayloadInvalid, Message: "invalid expiresAt"},
-			ObservedAt: nowStr}
+		return s.reject(cmd, ErrPayloadInvalid, "invalid expiresAt", nowStr)
 	}
 	if now.After(expiresAt) {
-		return Response{CommandID: cmd.CommandID, Status: "rejected",
-			Error: &ResponseError{Code: ErrExpired, Message: "command expired"},
-			ObservedAt: nowStr}
+		return s.reject(cmd, ErrExpired, "command expired", nowStr)
 	}
 	if !s.verifySignature(cmd) {
 		log.Printf("REJECTED signature_invalid cmd=%s op=%s", cmd.CommandID, cmd.Operation)
-		return Response{CommandID: cmd.CommandID, Status: "rejected",
-			Error: &ResponseError{Code: ErrSignatureInvalid, Message: "signature failed"},
-			ObservedAt: nowStr}
+		return s.reject(cmd, ErrSignatureInvalid, "signature failed", nowStr)
 	}
 	if !AllowedOperations[cmd.Operation] {
 		log.Printf("REJECTED operation_not_allowed cmd=%s op=%s", cmd.CommandID, cmd.Operation)
-		return Response{CommandID: cmd.CommandID, Status: "rejected",
-			Error: &ResponseError{Code: ErrOperationNotAllowed, Message: fmt.Sprintf("operation %q not allowlisted", cmd.Operation)},
-			ObservedAt: nowStr}
+		return s.reject(cmd, ErrOperationNotAllowed, fmt.Sprintf("operation %q not allowlisted", cmd.Operation), nowStr)
 	}
 	if err := s.validatePayload(cmd); err != nil {
 		log.Printf("REJECTED payload_invalid cmd=%s op=%s err=%v", cmd.CommandID, cmd.Operation, err)
-		return Response{CommandID: cmd.CommandID, Status: "rejected",
-			Error: &ResponseError{Code: ErrPayloadInvalid, Message: err.Error()},
-			ObservedAt: nowStr}
+		return s.reject(cmd, ErrPayloadInvalid, err.Error(), nowStr)
 	}
 
-	log.Printf("ACCEPTED cmd=%s op=%s resource=%s (handler stub — CL-052)", cmd.CommandID, cmd.Operation, cmd.ResourceID)
+	// Dispatch to handler
+	result, err := s.dispatch(ctx, cmd)
+	if err != nil {
+		log.Printf("FAILED cmd=%s op=%s err=%v", cmd.CommandID, cmd.Operation, err)
+		return Response{
+			CommandID:  cmd.CommandID,
+			Status:     "failed",
+			Error:      &ResponseError{Code: ErrInternal, Message: err.Error()},
+			ObservedAt: nowStr,
+		}
+	}
+
+	log.Printf("COMPLETED cmd=%s op=%s resource=%s", cmd.CommandID, cmd.Operation, cmd.ResourceID)
 	return Response{
-		CommandID: cmd.CommandID,
-		Status:    "completed",
-		Result: map[string]interface{}{
-			"note":    "command validated; handler implementation in CL-052",
-			"allowed": true,
-		},
+		CommandID:  cmd.CommandID,
+		Status:     "completed",
+		Result:     result,
 		ObservedAt: nowStr,
 	}
+}
+
+func (s *Server) reject(cmd *Command, code string, message string, nowStr string) Response {
+	return Response{
+		CommandID:  cmd.CommandID,
+		Status:     "rejected",
+		Error:      &ResponseError{Code: code, Message: message},
+		ObservedAt: nowStr,
+	}
+}
+
+// dispatch routes a validated command to the appropriate handler.
+func (s *Server) dispatch(ctx context.Context, cmd *Command) (map[string]interface{}, error) {
+	// Create a timeout context for the operation
+	opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	switch cmd.Operation {
+	case "release.startCandidate":
+		var payload commands.ReleaseStartCandidatePayload
+		if err := decodePayload(cmd.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("invalid payload: %w", err)
+		}
+		return commands.ReleaseStartCandidate(opCtx, cmd.ResourceID, payload)
+
+	case "release.stop":
+		var payload commands.ReleaseStopPayload
+		if err := decodePayload(cmd.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("invalid payload: %w", err)
+		}
+		return commands.ReleaseStop(opCtx, payload)
+
+	case "release.inspect":
+		var payload commands.ReleaseInspectPayload
+		if err := decodePayload(cmd.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("invalid payload: %w", err)
+		}
+		return commands.ReleaseInspect(opCtx, cmd.ResourceID, payload)
+
+	case "volume.create":
+		var payload commands.VolumeCreatePayload
+		if err := decodePayload(cmd.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("invalid payload: %w", err)
+		}
+		if !commands.ValidateMountPath(payload.MountPath) {
+			return nil, fmt.Errorf("mount path %s not in allowlist [/data, /uploads, /cache]", payload.MountPath)
+		}
+		return commands.VolumeCreate(opCtx, payload)
+
+	case "volume.delete":
+		var payload commands.VolumeDeletePayload
+		if err := decodePayload(cmd.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("invalid payload: %w", err)
+		}
+		return commands.VolumeDelete(opCtx, payload)
+
+	case "caddy.validate":
+		var payload struct {
+			ConfigPath string `json:"configPath"`
+		}
+		if err := decodePayload(cmd.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("invalid payload: %w", err)
+		}
+		if err := caddy.Validate(opCtx, payload.ConfigPath); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"valid": true}, nil
+
+	case "caddy.reload":
+		var payload struct {
+			ConfigSha256 string `json:"configSha256"`
+			ConfigPath   string `json:"configPath"`
+		}
+		if err := decodePayload(cmd.Payload, &payload); err != nil {
+			return nil, fmt.Errorf("invalid payload: %w", err)
+		}
+		if err := caddy.Reload(opCtx, payload.ConfigPath); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"reloaded": true}, nil
+
+	default:
+		return nil, fmt.Errorf("unhandled operation: %s", cmd.Operation)
+	}
+}
+
+func decodePayload(raw map[string]interface{}, target interface{}) error {
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, target)
 }
 
 func (s *Server) verifySignature(cmd *Command) bool {
@@ -157,6 +248,10 @@ func (s *Server) writeResponse(conn net.Conn, resp Response) {
 	conn.Write(respBytes)
 	conn.Write([]byte("\n"))
 }
+
+// Reference docker package to suppress unused import warning if handlers
+// are refactored to not use it directly.
+var _ = docker.StartContainer
 
 func canonicalJSON(m map[string]interface{}) (string, error) {
 	keys := make([]string, 0, len(m))
