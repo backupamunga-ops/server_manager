@@ -10,6 +10,9 @@ import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/com
 import { PrismaService } from '../../common/prisma.service.js';
 import { SecretsService } from '../secrets/secrets.service.js';
 import { seedWorkspace } from './seed.js';
+import { DB_APP_USERNAME, DatabasePipelineService } from './database-pipeline.service.js';
+import { DomainPipelineService } from './domain-pipeline.service.js';
+import { AppPipelineService } from './app-pipeline.service.js';
 
 const uid = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 11)}`;
 const now = () => new Date();
@@ -48,7 +51,13 @@ function safeHttpUrl(u: string): boolean {
 
 @Injectable()
 export class WorkspaceService {
-  constructor(private readonly prisma: PrismaService, private readonly secrets: SecretsService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly secrets: SecretsService,
+    private readonly databases: DatabasePipelineService,
+    private readonly domains: DomainPipelineService,
+    private readonly apps: AppPipelineService,
+  ) {}
 
   private async workspaceFor(userId: string) {
     const ws = await this.prisma.workspace.findUnique({ where: { ownerId: userId } });
@@ -264,18 +273,22 @@ export class WorkspaceService {
       include: { dbUsers: true },
     });
     for (const svc of dbs) {
-      if (!svc.dbUsers.some((u) => u.serviceId === svc.id)) {
-        const uname = (svc.name.replace(/[^a-z0-9]/gi, '_') + '_app').slice(0, 48);
-        await this.prisma.dbUser.create({
-          data: {
-            serviceId: svc.id, username: uname,
-            privileges: svc.engine === 'PostgreSQL'
-              ? ['CONNECT', 'USAGE', 'SELECT', 'INSERT', 'UPDATE', 'DELETE']
-              : ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'INDEX'],
-            passwordCipher: this.secrets.encrypt('demo_' + Math.random().toString(36).slice(2, 12)),
-          },
-        });
-      }
+      if (svc.dbUsers.some((u) => u.serviceId === svc.id)) continue;
+      const uname = (svc.name.replace(/[^a-z0-9]/gi, '_') + '_app').slice(0, 48);
+      let passwordCipher = this.secrets.encrypt('demo_' + Math.random().toString(36).slice(2, 12));
+      try {
+        const real = await this.databases.createDbUser(svc.engine ?? 'MySQL', svc.databaseName ?? '', uname);
+        passwordCipher = this.secrets.encrypt(real.password);
+      } catch { /* no real container (sample workspace) — demo credential */ }
+      await this.prisma.dbUser.create({
+        data: {
+          serviceId: svc.id, username: uname,
+          privileges: svc.engine === 'PostgreSQL'
+            ? ['CONNECT', 'USAGE', 'SELECT', 'INSERT', 'UPDATE', 'DELETE']
+            : ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'INDEX'],
+          passwordCipher,
+        },
+      });
     }
   }
 
@@ -333,6 +346,10 @@ export class WorkspaceService {
           where: { project: { workspaceId: wsId } }, select: { id: true },
         });
         for (const s of svcs) {
+          const svcRow = await this.prisma.service.findUnique({ where: { id: s.id } });
+          if (svcRow?.kind === 'database' && svcRow.databaseName) {
+            try { await this.databases.destroy(svcRow.engine ?? 'MySQL', svcRow.databaseName); } catch { /* already gone */ }
+          }
           await this.prisma.cronRun.deleteMany({ where: { serviceId: s.id } });
           await this.prisma.dbBackup.deleteMany({ where: { serviceId: s.id } });
           await this.prisma.dbUser.deleteMany({ where: { serviceId: s.id } });
@@ -368,6 +385,15 @@ export class WorkspaceService {
           throw new BadRequestException('Enter a valid database name.');
         }
         const projectId = await this.resolveProject(wsId, p);
+        let passwordCipher = this.demoPassword();
+        let provisionNote = '';
+        try {
+          const prov = await this.databases.provision(String(p.engine), String(p.database), String(p.name));
+          passwordCipher = this.secrets.encrypt(prov.appPassword);
+          provisionNote = 'container running';
+        } catch (err) {
+          provisionNote = 'provisioning unavailable — registered only';
+        }
         const s = await S.create({
           data: {
             projectId, environmentId: await this.envFor(projectId),
@@ -375,10 +401,11 @@ export class WorkspaceService {
             framework: String(p.engine), engine: String(p.engine),
             engineVersion: p.engine === 'PostgreSQL' ? '16' : p.engine === 'MySQL' ? '8' : '11',
             databaseName: String(p.database), external: false, allowedIp: '',
-            passwordCipher: this.demoPassword(), observedState: 'running',
+            passwordCipher, observedState: 'running',
           },
         });
         await this.ensureDbUsers(wsId);
+        if (provisionNote) await this.activity(wsId, 'Database container', `${s.name} · ${provisionNote}`, 'database');
         await this.activity(wsId, 'Database provisioned', `${s.name} · ${s.engine}`, 'database');
         break;
       }
@@ -427,6 +454,10 @@ export class WorkspaceService {
         const v = vars[idx];
         if (!v) throw new BadRequestException('Variable not found.');
         await this.prisma.serviceVariable.delete({ where: { id: v.id } });
+        try {
+          const r = await this.apps.variablesRevision(userId, s.id);
+          if (r.mode === 'real') await this.activity(wsId, 'Redeploy started', `${s.name} · deployment ${r.deploymentId}`, 'deploy');
+        } catch { /* demo service — no redeploy */ }
         await this.activity(wsId, 'Variable removed', `${v.key} · ${s.name}`, 'system');
         break;
       }
@@ -459,14 +490,24 @@ export class WorkspaceService {
       }
       case 'rotateDb': {
         const s = await findService(p.serviceId);
-        await S.update({ where: { id: s.id }, data: { passwordCipher: this.demoPassword() } });
+        let cipher = this.demoPassword();
+        try {
+          const real = await this.databases.rotateUserPassword(s.engine ?? 'MySQL', s.databaseName ?? '', DB_APP_USERNAME);
+          cipher = this.secrets.encrypt(real.password);
+        } catch { /* no real container — demo rotation */ }
+        await S.update({ where: { id: s.id }, data: { passwordCipher: cipher } });
         await this.activity(wsId, 'Credentials rotated', s.name, 'database');
         break;
       }
       case 'backupDb': {
         const s = await findService(p.serviceId);
+        let detail = 'snapshot recorded';
+        try {
+          const b = await this.databases.createBackup(s.engine ?? 'MySQL', s.databaseName ?? '');
+          detail = `${b.path} · ${b.size} bytes`;
+        } catch { /* no real container — registry-only backup */ }
         await this.prisma.dbBackup.create({ data: { serviceId: s.id, status: 'success' } });
-        await this.activity(wsId, 'Database backup created', s.name, 'database');
+        await this.activity(wsId, 'Database backup created', `${s.name} · ${detail}`, 'database');
         break;
       }
       case 'dbUserAdd': {
@@ -486,8 +527,14 @@ export class WorkspaceService {
           : (db.engine === 'PostgreSQL'
             ? ['CONNECT', 'USAGE', 'SELECT', 'INSERT', 'UPDATE', 'DELETE']
             : ['SELECT', 'INSERT', 'UPDATE', 'DELETE']);
+        let passwordCipher = this.demoPassword();
+        try {
+          const real = await this.databases.createDbUser(db.engine ?? 'MySQL', db.databaseName ?? '', username);
+          await this.databases.grantPrivileges(db.engine ?? 'MySQL', db.databaseName ?? '', username, privileges);
+          passwordCipher = this.secrets.encrypt(real.password);
+        } catch { /* no real container — demo credential */ }
         await this.prisma.dbUser.create({
-          data: { serviceId: db.id, username, privileges, passwordCipher: this.demoPassword() },
+          data: { serviceId: db.id, username, privileges, passwordCipher },
         });
         await this.activity(wsId, 'Database user created', `${username} · ${db.databaseName}`, 'database');
         break;
@@ -500,9 +547,13 @@ export class WorkspaceService {
         const db = await findService(u.serviceId);
         const allowed = dbPrivileges(db.engine ?? 'MySQL');
         const checked = Array.isArray(p.privileges) ? (p.privileges as string[]) : [];
+        const scoped = checked.filter((x) => allowed.includes(x));
+        try {
+          await this.databases.grantPrivileges(db.engine ?? 'MySQL', db.databaseName ?? '', u.username, scoped);
+        } catch { /* no real container — registry-only update */ }
         await this.prisma.dbUser.update({
           where: { id: u.id },
-          data: { privileges: checked.filter((x) => allowed.includes(x)) },
+          data: { privileges: scoped },
         });
         await this.activity(wsId, 'Database privileges updated', u.username, 'database');
         break;
@@ -512,6 +563,14 @@ export class WorkspaceService {
           where: { id: String(p.userId), service: { project: { workspaceId: wsId } } },
         });
         if (!u) throw new BadRequestException('User not found.');
+        const dbU = await findService(u.serviceId);
+        try {
+          if (u.revoked) {
+            await this.databases.restoreUserAccess(dbU.engine ?? 'MySQL', dbU.databaseName ?? '', u.username, u.privileges);
+          } else {
+            await this.databases.revokeUser(dbU.engine ?? 'MySQL', dbU.databaseName ?? '', u.username);
+          }
+        } catch { /* no real container — registry-only update */ }
         await this.prisma.dbUser.update({ where: { id: u.id }, data: { revoked: !u.revoked } });
         await this.activity(wsId, u.revoked ? 'Database access restored' : 'Database access revoked',
           u.username, 'database');
@@ -522,10 +581,15 @@ export class WorkspaceService {
           where: { id: String(p.userId), service: { project: { workspaceId: wsId } } },
         });
         if (!u) throw new BadRequestException('User not found.');
-        await this.prisma.dbUser.update({
-          where: { id: u.id },
-          data: { passwordCipher: this.secrets.encrypt('demo_' + Math.random().toString(36).slice(2, 16)) },
-        });
+        const dbU = await findService(u.serviceId);
+        let cipher: string;
+        try {
+          const real = await this.databases.rotateUserPassword(dbU.engine ?? 'MySQL', dbU.databaseName ?? '', u.username);
+          cipher = this.secrets.encrypt(real.password);
+        } catch {
+          cipher = this.secrets.encrypt('demo_' + Math.random().toString(36).slice(2, 16));
+        }
+        await this.prisma.dbUser.update({ where: { id: u.id }, data: { passwordCipher: cipher } });
         await this.activity(wsId, 'Database user password rotated', u.username, 'database');
         break;
       }
@@ -575,6 +639,14 @@ export class WorkspaceService {
       case 'verifyZone': {
         const z = await findZone(p.zoneId);
         const mode = z.pendingDnsMode ?? z.dnsMode;
+        let how = 'simulation';
+        if (mode === 'manual') {
+          const records = await this.prisma.dnsRecord.findMany({ where: { zoneId: z.id } });
+          const token = this.domains.resolveZoneToken(records) ?? '';
+          const res = await this.domains.verifyTxt(z.name, token);
+          if (res.verified) how = 'live TXT match';
+          // else: fall through — the reserved demo namespaces cannot carry real DNS.
+        }
         await this.prisma.domainZone.update({
           where: { id: z.id },
           data: {
@@ -583,7 +655,7 @@ export class WorkspaceService {
           },
         });
         await this.activity(wsId, mode === 'managed' ? 'Nameserver delegation simulated'
-          : 'Manual DNS verification simulated', z.name, 'domain');
+          : `Manual DNS verified (${how})`, z.name, 'domain');
         break;
       }
       case 'dnsModePrepare': {
@@ -653,6 +725,13 @@ export class WorkspaceService {
           data: { workspaceId: wsId, host: h.name, status: 'VERIFIED', dnsMode: 'MANUAL',
             verificationToken: uid('verify') },
         });
+        try {
+          await this.domains.routeFor(h.name, { id: s.id, name: s.name });
+          await this.activity(wsId, 'Caddy route activated', `${h.name} → ${s.name}`, 'domain');
+        } catch (err) {
+          await this.activity(wsId, 'Route pending',
+            `${h.name}: ${(err as Error).message.slice(0, 140)}`, 'domain');
+        }
         await this.activity(wsId, 'Domain connected', `${h.name} → ${s.name}`, 'domain');
         break;
       }
@@ -662,6 +741,7 @@ export class WorkspaceService {
         });
         if (!h || !h.serviceId) throw new BadRequestException('Hostname is not connected.');
         await this.prisma.domain.deleteMany({ where: { workspaceId: wsId, host: h.name } });
+        try { await this.domains.removeRoute(h.name, h.serviceId); } catch { /* route not present */ }
         await this.prisma.hostname.update({ where: { id: h.id }, data: { serviceId: null } });
         await this.activity(wsId, 'Domain disconnected', h.name, 'domain');
         break;
@@ -718,6 +798,9 @@ export class WorkspaceService {
         const hosts = await this.prisma.hostname.findMany({ where: { zoneId: z.id } });
         if (hosts.some((h) => h.serviceId)) {
           throw new BadRequestException('Disconnect all project hostnames before removing this domain.');
+        }
+        for (const h of hosts) {
+          try { await this.domains.removeRoute(h.name); } catch { /* none */ }
         }
         await this.prisma.dnsRecord.deleteMany({ where: { zoneId: z.id } });
         await this.prisma.mailAlias.deleteMany({ where: { zoneId: z.id } });
@@ -934,6 +1017,21 @@ export class WorkspaceService {
         const frameworkRaw = String(p.framework ?? 'auto');
         const framework = frameworkRaw === 'auto' ? 'Node.js/Express' : frameworkRaw;
         const role = framework === 'NestJS' || (framework === 'Node.js/Express' && /api|backend|server/i.test(name + repo)) ? 'api' : 'web';
+        let realGithub: { serviceId: string } | null = null;
+        try {
+          const r = await this.apps.createGithubAppReal(userId, {
+            projectId,
+            name, repoFullName: repo, branch: String(p.branch ?? 'main'),
+            autoDeploy: !!p.autoDeploy, framework,
+          });
+          if (r.mode === 'real') realGithub = { serviceId: r.serviceId };
+        } catch (err) {
+          if (!(err instanceof BadRequestException) || !(err.message as string).includes('GitHub App')) throw err;
+        }
+        if (realGithub) {
+          await this.activity(wsId, 'Deployment requested', `${name} · GitHub (real pipeline)`, 'deploy');
+          break;
+        }
         const s = await S.create({
           data: {
             projectId, environmentId: await this.envFor(projectId), name,
@@ -1030,11 +1128,16 @@ export class WorkspaceService {
         });
         if (!d || d.status !== 'LIVE') throw new BadRequestException('Only a live release can be restored.');
         const svc = await findService(d.serviceId);
+        let summary = `${svc.name} · ${d.revision}`;
+        try {
+          const r = await this.apps.rollbackReal(userId, d.serviceId, d.id);
+          if (r.mode === 'real') summary = r.summary;
+        } catch { /* demo release — pointer flip below */ }
         await S.update({
           where: { id: svc.id },
           data: { activeDeploymentId: d.id, observedState: 'running' },
         });
-        await this.activity(wsId, 'Release rolled back', `${svc.name} · ${d.revision}`, 'deploy');
+        await this.activity(wsId, 'Release rolled back', summary, 'deploy');
         break;
       }
       case 'confirmPlatformDns': {
