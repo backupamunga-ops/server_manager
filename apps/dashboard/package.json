@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "clean": "rm -rf .svelte-kit dist build"
+    "clean": "rm -rf .svelte-kit dist build",
+    "prepare": "svelte-kit sync || true"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "3.0.6",
