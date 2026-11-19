@@ -66,8 +66,7 @@ systemctl start cloudlane-garage
 # Wait for Garage to be ready
 log_info "Waiting for Garage S3 API..."
 for i in $(seq 1 15); do
-  if docker exec cloudlane-garage wget -qO- http://localhost:3900/health 2>/dev/null || \
-     docker exec cloudlane-garage curl -fsS http://localhost:3900/ 2>/dev/null; then
+  if docker exec cloudlane-garage /garage status >/dev/null 2>&1; then
     log_ok "Garage is responding"
     break
   fi
@@ -77,9 +76,24 @@ for i in $(seq 1 15); do
   fi
 done
 
-# Create buckets using garage CLI inside the container
-log_info "Creating S3 buckets..."
-docker exec cloudlane-garage /garage layout assign --node "$(docker exec cloudlane-garage /garage status | head -5 | grep -oP '^[a-f0-9]+' | head -1)" --zone garage --capacity 1 2>/dev/null || true
+# Assign the node its storage role and apply the layout.
+# Garage v1.0.1 CLI: node ids are positional, capacity is in bytes
+# (suffixes supported). Commit half of the free space on the data volume,
+# minimum 1 GB.
+log_info "Configuring Garage cluster layout..."
+NODE_ID=$(docker exec cloudlane-garage /garage status | awk '/HEALTHY NODES/{f=1; next} f && $1 ~ /^[0-9a-f]+$/ {print $1; exit}')
+LAYOUT_VERSION=$(docker exec cloudlane-garage /garage layout show | grep -oP 'Current cluster layout version: \K[0-9]+' || echo 0)
+if [[ -n "$NODE_ID" && "$LAYOUT_VERSION" == "0" ]]; then
+  AVAIL_KB=$(df --output=avail -k /var/lib/cloudlane/garage-data | tail -1 | tr -dc '0-9')
+  CAP_KB=$((AVAIL_KB / 2))
+  if [[ $CAP_KB -lt 1048576 ]]; then CAP_KB=1048576; fi
+  docker exec cloudlane-garage /garage layout assign -z garage -c "${CAP_KB}KB" "$NODE_ID" \
+    || log_warn "garage layout assign failed"
+  docker exec cloudlane-garage /garage layout apply --version 1 \
+    || log_warn "garage layout apply failed"
+else
+  log_ok "Garage layout already configured"
+fi
 
 # Create buckets
 for bucket in cloudlane-uploads cloudlane-deployments; do
@@ -98,9 +112,15 @@ if [[ -n "$CLOUDLANE_S3_KEY" && -n "$CLOUDLANE_S3_SECRET" ]]; then
     docker exec cloudlane-garage /garage bucket allow --key cloudlane-api --read --write "$bucket" 2>/dev/null || true
   done
 
-  # Update API env with real S3 credentials
-  sed -i "s/S3_ACCESS_KEY=PLACEHOLDER/S3_ACCESS_KEY=$CLOUDLANE_S3_KEY/" /etc/cloudlane/api.env
-  sed -i "s/S3_SECRET_KEY=PLACEHOLDER/S3_SECRET_KEY=$CLOUDLANE_S3_SECRET/" /etc/cloudlane/api.env
+  # Update API env with real S3 credentials (append if placeholders absent)
+  if grep -q '^S3_ACCESS_KEY=' /etc/cloudlane/api.env 2>/dev/null; then
+    sed -i "s/^S3_ACCESS_KEY=.*/S3_ACCESS_KEY=$CLOUDLANE_S3_KEY/" /etc/cloudlane/api.env
+    sed -i "s/^S3_SECRET_KEY=.*/S3_SECRET_KEY=$CLOUDLANE_S3_SECRET/" /etc/cloudlane/api.env
+  else
+    printf '\nS3_ACCESS_KEY=%s\nS3_SECRET_KEY=%s\nS3_ENDPOINT=http://127.0.0.1:3900\nS3_REGION=garage\n' \
+      "$CLOUDLANE_S3_KEY" "$CLOUDLANE_S3_SECRET" >> /etc/cloudlane/api.env
+  fi
+  chmod 600 /etc/cloudlane/api.env
   log_ok "S3 credentials written to /etc/cloudlane/api.env"
 else
   log_warn "Could not create S3 API key automatically. Run manually:"

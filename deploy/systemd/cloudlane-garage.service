@@ -12,6 +12,8 @@ ExecStartPre=/bin/mkdir -p /var/lib/cloudlane/garage-data /var/lib/cloudlane/gar
 ExecStart=/usr/bin/docker run \
   --name cloudlane-garage \
   --network cloudlane-internal \
+  -p 127.0.0.1:3900:3900 \
+  -p 127.0.0.1:3902:3902 \
   --restart=no \
   -v /etc/cloudlane/garage/config.toml:/etc/garage.toml:ro \
   -v /var/lib/cloudlane/garage-data:/var/lib/garage/data \
