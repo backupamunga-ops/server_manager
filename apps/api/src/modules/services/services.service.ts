@@ -6,11 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DeploymentsService } from '../deployments/deployments.service.js';
 import { SecretsService } from '../secrets/secrets.service.js';
 import { UploadsService } from '../uploads/uploads.service.js';
+import { DomainPipelineService } from '../workspace/domain-pipeline.service.js';
 
 const serviceNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 
@@ -24,7 +26,38 @@ export class ServicesService {
     private readonly deployments: DeploymentsService,
     private readonly uploads: UploadsService,
     private readonly secrets: SecretsService,
+    private readonly domains: DomainPipelineService,
+    private readonly config: ConfigService,
   ) {}
+
+  /**
+   * Vercel-style platform URL: every application gets <slug>.<suffix> the
+   * moment it is created, plus a Caddy hostname route (active as soon as the
+   * wildcard record resolves). Idempotent and collision-safe.
+   */
+  private async ensurePlatformDomain(
+    workspaceId: string, serviceId: string, serviceName: string,
+  ): Promise<void> {
+    const suffix = this.config.get<string>('PLATFORM_APP_SUFFIX') ?? 'apps.example.test';
+    const slug = serviceName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) return;
+    let host = `${slug}.${suffix}`;
+    const taken = await this.prisma.domain.findFirst({ where: { host } });
+    if (taken) {
+      host = `${slug}-${serviceId.slice(-4)}.${suffix}`;
+    }
+    try {
+      await this.prisma.domain.create({
+        data: {
+          workspaceId, host, status: 'VERIFIED', dnsMode: 'MANUAL',
+          verificationToken: `verify-${serviceId.slice(0, 8)}`,
+        },
+      });
+    } catch { /* duplicate — another flow already created it */ }
+    try {
+      await this.domains.routeFor(host, { id: serviceId, name: serviceName });
+    } catch { /* route pending — container port not published yet */ }
+  }
 
   async getForOwner(userId: string, serviceId: string) {
     const service = await this.prisma.service.findUnique({
@@ -179,6 +212,7 @@ export class ServicesService {
 
     // Queue the deployment for processing
     await this.deployments.queueDeployment(result.deployment.id);
+    void this.ensurePlatformDomain(project.workspace.id, serviceId, name).catch(() => {});
 
     await this.audit.record('SERVICE_CREATED', 'success', {
       actorType: 'user',
@@ -296,6 +330,7 @@ export class ServicesService {
     });
 
     await this.deployments.queueDeployment(created.deployment.id);
+    void this.ensurePlatformDomain(project.workspace.id, serviceId, name).catch(() => {});
 
     await this.audit.record('SERVICE_CREATED', 'success', {
       actorType: 'user',
