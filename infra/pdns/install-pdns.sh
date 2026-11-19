@@ -57,12 +57,10 @@ api-key=$API_KEY
 webserver=yes
 webserver-address=127.0.0.1
 webserver-port=8053
-local-address=0.0.0.0, ::
+local-address=0.0.0.0
+# NOTE: if systemd-resolved stub listeners conflict, bind the public IP instead:
+# local-address=<vps-ip>
 local-port=53
-default-soa-name=ns1.billucsolutions.co.ke
-default-soa-mail=hostmaster.billucsolutions.co.ke
-slave=no
-master=no
 loglevel=4
 CONF
 
