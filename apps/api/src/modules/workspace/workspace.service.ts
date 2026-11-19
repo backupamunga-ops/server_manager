@@ -345,7 +345,13 @@ export class WorkspaceService {
 
   /** Full teardown of one service row: container, routes, domains, owned rows. */
   private async teardownServiceRow(
-    s: { id: string; name: string; activeDeploymentId: string | null },
+    s: {
+      id: string;
+      name: string;
+      kind: string;
+      databaseName?: string | null;
+      activeDeploymentId: string | null;
+    },
     wsId: string,
   ): Promise<void> {
     // best-effort container teardown (API runs on the VPS host)
@@ -363,8 +369,13 @@ export class WorkspaceService {
       const needles = [s.id, ...deps.map((d) => d.id)].filter(Boolean);
       const names = String(stdout).split('\n').filter((nm) =>
         needles.some((nd) => nm.includes(nd)));
-      for (const name of names) {
+      // database containers are named cl-<databaseName>, not by service id
+      if (s.kind === 'database' && s.databaseName) {
+        names.push(`cl-${s.databaseName}`);
+      }
+      for (const name of [...new Set(names)]) {
         await run('docker', ['rm', '-f', name]).catch(() => null);
+        await run('docker', ['volume', 'rm', '-f', name]).catch(() => null);
       }
     } catch { /* teardown is best-effort */ }
     // caddy routes + domain rows (platform URLs of this service)
@@ -392,7 +403,6 @@ export class WorkspaceService {
     for (const stmt of [
       'DELETE FROM "DeploymentEvent" WHERE "deploymentId" IN (SELECT id FROM "Deployment" WHERE "serviceId" = $1)',
       'DELETE FROM "Deployment" WHERE "serviceId" = $1',
-      'DELETE FROM "DnsRecord" WHERE "serviceId" = $1',
       'DELETE FROM "PersistentVolume" WHERE "serviceId" = $1',
       'DELETE FROM "StorageObject" WHERE "bucketId" IN (SELECT id FROM "Bucket" WHERE "storageServiceId" = $1)',
       'DELETE FROM "Bucket" WHERE "storageServiceId" = $1',
@@ -402,7 +412,6 @@ export class WorkspaceService {
       'DELETE FROM "DbBackup" WHERE "serviceId" = $1',
       'DELETE FROM "ServiceVariable" WHERE "serviceId" = $1',
       'DELETE FROM "CronRun" WHERE "serviceId" = $1',
-      'DELETE FROM "CronJob" WHERE "serviceId" = $1',
     ]) {
       await this.prisma.$executeRawUnsafe(stmt, s.id).catch(() => null);
     }
@@ -887,7 +896,9 @@ export class WorkspaceService {
         for (const svc of svcs) {
           await this.teardownServiceRow(svc, wsId);
         }
-        await this.prisma.environment.deleteMany({ where: { projectId: proj.id } });
+        await this.prisma.environment
+          .deleteMany({ where: { projectId: proj.id } })
+          .catch(() => null);
         try {
           await this.prisma.project.delete({ where: { id: proj.id } });
         } catch {
