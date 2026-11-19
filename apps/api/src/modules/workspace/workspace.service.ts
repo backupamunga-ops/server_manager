@@ -14,6 +14,7 @@ import { seedWorkspace } from './seed.js';
 import { DB_APP_USERNAME, DatabasePipelineService } from './database-pipeline.service.js';
 import { DomainPipelineService } from './domain-pipeline.service.js';
 import { AppPipelineService } from './app-pipeline.service.js';
+import { StoragePipelineService } from './storage-pipeline.service.js';
 
 const uid = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 11)}`;
 const now = () => new Date();
@@ -59,6 +60,7 @@ export class WorkspaceService {
     private readonly databases: DatabasePipelineService,
     private readonly domains: DomainPipelineService,
     private readonly apps: AppPipelineService,
+    private readonly storage: StoragePipelineService,
   ) {}
 
   /** Platform-generated application URL suffix (vercel-style previews). */
@@ -392,6 +394,8 @@ export class WorkspaceService {
           throw new BadRequestException('Enter a valid database name.');
         }
         const projectId = await this.resolveProject(wsId, p);
+        const dup = await S.findFirst({ where: { projectId, name: String(p.name) } });
+        if (dup) throw new BadRequestException('Service name already exists in this project.');
         let passwordCipher = this.demoPassword();
         let provisionNote = '';
         try {
@@ -421,6 +425,8 @@ export class WorkspaceService {
           throw new BadRequestException('Use an HTTPS URL with a public destination.');
         }
         const projectId = await this.resolveProject(wsId, p);
+        const dup = await S.findFirst({ where: { projectId, name: String(p.name) } });
+        if (dup) throw new BadRequestException('Service name already exists in this project.');
         const s = await S.create({
           data: {
             projectId, environmentId: await this.envFor(projectId),
@@ -441,14 +447,22 @@ export class WorkspaceService {
         }
         const exists = await S.findFirst({ where: { projectId, name } });
         if (exists) throw new BadRequestException('Service name already exists in this project.');
+        let note = '';
+        try {
+          const prov = await this.storage.ensureBucket(name);
+          note = `garage bucket ${prov.bucket} · ${prov.endpoint}`;
+        } catch (err) {
+          note = `bucket pending: ${(err as Error).message.slice(0, 80)}`;
+        }
         const s = await S.create({
           data: {
             projectId, environmentId: await this.envFor(projectId), name, kind: 'storage',
             role: 'worker', source: 'zip', framework: 'Object Storage',
-            provider: 'External S3-compatible', observedState: 'ready',
+            provider: `Cloudlane S3 (Garage) · ${note.slice(0, 120)}`, observedState: 'ready',
           },
         });
-        await this.activity(wsId, 'Storage service created (demo)', name, 'system');
+        await this.activity(wsId, note.startsWith('garage bucket') ? 'Object storage ready (Garage)' : 'Storage service created',
+          `${name} · ${note.slice(0, 120)}`, 'system');
         void s;
         break;
       }
@@ -891,7 +905,13 @@ export class WorkspaceService {
             maxMB: Number(p.maxMB) || 500,
           },
         });
-        await this.activity(wsId, 'Private bucket created (demo)', name, 'system');
+        try {
+          await this.storage.ensureBucket(name);
+          await this.activity(wsId, 'Private bucket created (Garage)', name, 'system');
+        } catch (err) {
+          await this.activity(wsId, 'Bucket registered',
+            `${name} · garage pending: ${(err as Error).message.slice(0, 80)}`, 'system');
+        }
         void b;
         break;
       }

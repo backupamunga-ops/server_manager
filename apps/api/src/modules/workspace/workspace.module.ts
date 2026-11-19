@@ -13,6 +13,7 @@ import { WorkspaceService } from './workspace.service.js';
 @Module({
   imports: [SecretsModule, AgentModule, AuditModule, DeploymentsModule, ServicesModule],
   controllers: [WorkspaceController],
-  providers: [WorkspaceService, DatabasePipelineService, DomainPipelineService, AppPipelineService],
+  providers: [WorkspaceService, DatabasePipelineService, DomainPipelineService, AppPipelineService,
+    StoragePipelineService, CronRunnerService],
 })
 export class WorkspaceModule {}
