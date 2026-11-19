@@ -137,8 +137,15 @@ model Workspace {
   ownerId         String   @unique
   createdAt       DateTime @default(now())
   owner           User     @relation(fields: [ownerId], references: [id])
+  githubConnected Boolean  @default(false)
   projects        Project[]
   domains         Domain[]
+  domainZones     DomainZone[]
+  activities      ActivityItem[]
+  serviceLinks    ServiceLink[]
+  buckets         Bucket[]
+  storageObjects  StorageObject[]
+  storageGrants   StorageGrant[]
 }
 
 model Project {
@@ -173,6 +180,9 @@ model Environment {
 
 enum ServiceKind {
   application
+  database
+  cron
+  storage
 }
 
 enum ServiceRole {
@@ -211,6 +221,30 @@ model Service {
   zipSource       ZipSource?
   volumes         PersistentVolume[]
   activeDeployment Deployment? @relation("ActiveDeployment", fields: [activeDeploymentId], references: [id])
+  // Cloudlane prototype resource fields (scaffold layer)
+  repoFullName     String?
+  branch           String?
+  autoDeploy       Boolean?
+  fileName         String?
+  engine           String?
+  engineVersion    String?
+  databaseName     String?
+  external         Boolean?
+  allowedIp        String?
+  passwordCipher   String?
+  method           String?
+  targetUrl        String?
+  schedule         String?
+  timezone         String?
+  enabled          Boolean?
+  provider         String?
+  dbUsers          DbUser[]
+  dbBackups        DbBackup[]
+  cronRuns         CronRun[]
+  buckets          Bucket[]
+  storageGrants    StorageGrant[]
+  serviceLinksFrom ServiceLink[] @relation("LinkFrom")
+  serviceLinksTo   ServiceLink[] @relation("LinkTo")
   @@unique([projectId, name])
 }
 
@@ -419,4 +453,169 @@ model Domain {
   workspace         Workspace     @relation(fields: [workspaceId], references: [id])
 
   @@index([workspaceId])
+}
+
+
+// ─── Cloudlane domain registry (prototype v1.4+) ───
+
+model DomainZone {
+  id             String   @id @default(uuid())
+  workspaceId    String
+  name           String
+  status         String   @default("pending")
+  dnsMode        String   @default("manual")
+  pendingDnsMode String?
+  delegation     String?
+  createdAt      DateTime @default(now())
+  workspace      Workspace @relation(fields: [workspaceId], references: [id])
+  hostnames      Hostname[]
+  dnsRecords     DnsRecord[]
+  mailboxes      Mailbox[]
+  mailAliases    MailAlias[]
+  @@unique([workspaceId, name])
+}
+
+model Hostname {
+  id        String   @id @default(uuid())
+  zoneId    String
+  name      String   @unique
+  type      String
+  serviceId String?
+  createdAt DateTime @default(now())
+  zone      DomainZone @relation(fields: [zoneId], references: [id])
+}
+
+model DnsRecord {
+  id       String  @id @default(uuid())
+  zoneId   String
+  type     String
+  name     String
+  value    String
+  ttl      Int     @default(3600)
+  priority Int?
+  zone     DomainZone @relation(fields: [zoneId], references: [id])
+  @@index([zoneId])
+}
+
+model Mailbox {
+  id        String   @id @default(uuid())
+  zoneId    String
+  local     String
+  quota     Int      @default(100)
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  zone      DomainZone @relation(fields: [zoneId], references: [id])
+  @@index([zoneId])
+}
+
+model MailAlias {
+  id        String   @id @default(uuid())
+  zoneId    String
+  local     String
+  target    String
+  createdAt DateTime @default(now())
+  zone      DomainZone @relation(fields: [zoneId], references: [id])
+  @@index([zoneId])
+}
+
+// ─── Database pipeline resources ───
+
+model DbUser {
+  id          String   @id @default(uuid())
+  serviceId   String
+  username    String
+  privileges  String[]
+  revoked     Boolean  @default(false)
+  passwordCipher String
+  createdAt   DateTime @default(now())
+  service     Service  @relation(fields: [serviceId], references: [id])
+  @@unique([serviceId, username])
+}
+
+model DbBackup {
+  id        String   @id @default(uuid())
+  serviceId String
+  status    String   @default("success")
+  createdAt DateTime @default(now())
+  service   Service  @relation(fields: [serviceId], references: [id])
+  @@index([serviceId])
+}
+
+model CronRun {
+  id        String   @id @default(uuid())
+  serviceId String
+  status    String
+  code      String?
+  durationMs String?
+  createdAt DateTime @default(now())
+  service   Service  @relation(fields: [serviceId], references: [id])
+  @@index([serviceId, createdAt])
+}
+
+// ─── Object storage resources ───
+
+model Bucket {
+  id               String   @id @default(uuid())
+  workspaceId      String
+  storageServiceId String
+  name             String   @unique
+  privacy          String   @default("private")
+  purpose          String?
+  maxMB            Int      @default(500)
+  createdAt        DateTime @default(now())
+  workspace        Workspace @relation(fields: [workspaceId], references: [id])
+  service          Service  @relation(fields: [storageServiceId], references: [id])
+  objects          StorageObject[]
+  grants           StorageGrant[]
+}
+
+model StorageObject {
+  id        String   @id @default(uuid())
+  workspaceId String
+  bucketId  String
+  key       String
+  size      Int      @default(0)
+  type      String
+  isFolder  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  bucket    Bucket   @relation(fields: [bucketId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  @@unique([bucketId, key])
+}
+
+model StorageGrant {
+  id               String   @id @default(uuid())
+  workspaceId      String
+  storageServiceId String
+  bucketId         String
+  serviceId        String
+  scope            String
+  createdAt        DateTime @default(now())
+  workspace        Workspace @relation(fields: [workspaceId], references: [id])
+  service          Service  @relation(fields: [storageServiceId], references: [id])
+  bucket           Bucket   @relation(fields: [bucketId], references: [id])
+}
+
+// ─── Activity feed + visual links ───
+
+model ActivityItem {
+  id          String   @id @default(uuid())
+  workspaceId String
+  title       String
+  detail      String?
+  type        String   @default("system")
+  createdAt   DateTime @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  @@index([workspaceId, createdAt])
+}
+
+model ServiceLink {
+  id        String   @id @default(uuid())
+  workspaceId String
+  fromServiceId String
+  toServiceId   String
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  fromService Service @relation("LinkFrom", fields: [fromServiceId], references: [id])
+  toService   Service @relation("LinkTo", fields: [toServiceId], references: [id])
 }

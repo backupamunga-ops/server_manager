@@ -48,6 +48,21 @@ const get = <T,>(path: string) => request<T>('GET', path);
 const post = <T,>(path: string, body?: unknown, headers?: Record<string, string>) =>
   request<T>('POST', path, body, headers);
 const del = <T,>(path: string) => request<T>('DELETE', path);
+/** Raw-body PUT with same-origin credentials (multipart-free uploads use this). */
+async function putRaw(path: string, body: ArrayBuffer): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body,
+  });
+  if (!res.ok) {
+    let payload: Record<string, unknown> = {};
+    try { payload = await res.json(); } catch { /* empty body */ }
+    const envelope = (payload.error ?? payload) as Record<string, unknown>;
+    throw new ApiError(res.status, envelope);
+  }
+}
 
 // ---------- shared shapes ----------
 
@@ -178,6 +193,10 @@ export interface SessionRow {
 // ---------- API surface ----------
 
 export const api = {
+  get,
+  post,
+  del,
+  putRaw,
   installation: {
     status: () => get<{ status: string; version: string }>('/installation/status'),
   },

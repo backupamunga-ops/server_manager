@@ -14,6 +14,7 @@ import { DomainsModule } from './modules/domains/domains.module.js';
 import { GithubModule } from './modules/github/github.module.js';
 import { InstallationModule } from './modules/installation/installation.module.js';
 import { OverviewModule } from './modules/overview/overview.module.js';
+import { WorkspaceModule } from './modules/workspace/workspace.module.js';
 import { ProjectsModule } from './modules/projects/projects.module.js';
 import { SecretsModule } from './modules/secrets/secrets.module.js';
 import { ServicesModule } from './modules/services/services.module.js';
@@ -21,6 +22,7 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
 
 @Module({
   imports: [
+    WorkspaceModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env'],

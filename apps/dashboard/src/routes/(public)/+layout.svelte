@@ -1,5 +1,7 @@
 <script lang="ts">
-  /** Public shell: centered card on canvas, brand header (design-system §Layout). */
+  import './public.css';
+
+  /** Public shell: centered card on canvas, brand header. */
   let { children } = $props();
 </script>
 
