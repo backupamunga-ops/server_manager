@@ -83,6 +83,8 @@ export class WorkspaceService {
   }
 
   private async ensureSeed(ws: { id: string; name: string }) {
+    // Demo seed only when explicitly enabled — a wiped workspace must stay empty.
+    if (process.env.CLOUDLANE_SEED_DEMO !== '1') return;
     const count = await this.prisma.project.count({ where: { workspaceId: ws.id } });
     if (count === 0) await seedWorkspace(this.prisma, ws.id, (x) => this.secrets.encrypt(x));
   }
