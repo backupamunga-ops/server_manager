@@ -161,9 +161,24 @@ export async function extractZipSafe(zipPath: string, destDir: string): Promise<
   const absDest = resolve(destDir) + sep;
   let written = 0;
 
+  // Strip a single shared root folder ("mysite/index.html" → "index.html"),
+  // mirroring stripFirstSegment for GitHub archives. Never strip when the
+  // root segment itself is a file (e.g. a ZIP that is just "index.html").
+  const realEntries = info.entries.filter((e) => !e.isSymlink);
+  const segments = realEntries.map((e) => e.name.split(/[\\/]/));
+  const firsts = new Set(segments.map((s) => s[0]).filter(Boolean));
+  const rootIsBareFile = segments.some((s) => s.length === 1);
+  const stripPrefix = firsts.size === 1 && !rootIsBareFile ? [...firsts][0] + '/' : '';
+
   for (const entry of info.entries) {
     if (entry.isSymlink) continue; // never materialise symlinks
-    const target = resolve(join(absDest, entry.name));
+    const relName = stripPrefix && entry.name.startsWith(stripPrefix)
+      ? entry.name.slice(stripPrefix.length)
+      : stripPrefix
+        ? '' // a sibling of the root folder cannot happen when stripPrefix is set
+        : entry.name;
+    if (!relName) continue; // the root dir entry itself
+    const target = resolve(join(absDest, relName));
     if (!target.startsWith(absDest)) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',

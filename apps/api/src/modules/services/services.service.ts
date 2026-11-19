@@ -403,6 +403,13 @@ export class ServicesService {
       });
     }
 
+    // Self-heal credential drift: the encrypted Service credential is
+    // canonical; re-apply it to the live server so the SSO token works even
+    // if the container was rebuilt or the password was changed manually.
+    await this.databases
+      .resetAppUserPassword(engine, databaseName, username, password)
+      .catch(() => null);
+
     await this.audit.record('DB_ADMIN_OPEN', 'success', {
       actorType: 'user',
       actorUserId: userId,
@@ -431,8 +438,9 @@ export class ServicesService {
     }
 
     // phpMyAdmin 5.x CSRF-protects its login form, so a cross-origin form POST
-    // cannot log in. Hand a signed one-time URL (60s, single use) to the
-    // signon bridge inside the phpMyAdmin container instead.
+    // cannot log in. Hand a signed URL (5 min validity) to the signon bridge
+    // inside the phpMyAdmin container instead. Not single-use: a prefetch or
+    // a second navigation must not strand the user on the "session ended" page.
     const secret = this.config.get<string>('PMA_SSO_SECRET');
     if (!secret) {
       throw new ServiceUnavailableException({
@@ -445,7 +453,7 @@ export class ServicesService {
         server: host,
         username,
         password,
-        exp: Math.floor(Date.now() / 1000) + 60,
+        exp: Math.floor(Date.now() / 1000) + 300,
       }),
     ).toString('base64url');
     const sig = createHmac('sha256', secret).update(payload).digest('hex');

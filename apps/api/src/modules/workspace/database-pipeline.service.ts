@@ -253,6 +253,42 @@ export class DatabasePipelineService {
   }
 
   /**
+   * Re-sync a database user's password to the platform's stored credential.
+   *
+   * The encrypted credential on the Service row is canonical; containers can
+   * drift (rebuilt volumes, manual resets). Opening db-admin from the panel
+   * calls this first so the SSO token always carries a working password.
+   */
+  async resetAppUserPassword(
+    engine: string,
+    databaseName: string,
+    username: string,
+    password: string,
+  ): Promise<void> {
+    this.specFor(engine);
+    this.assertDatabaseName(databaseName);
+    this.assertUsername(username);
+    const cname = this.containerNameFor(databaseName);
+    if (engine === 'PostgreSQL') {
+      await this.sqlExec(
+        engine,
+        cname,
+        databaseName,
+        [`ALTER ROLE ${this.pgIdent(username)} WITH PASSWORD ${this.pgLit(password)}`],
+        `Could not sync the database user "${username}"`,
+      );
+    } else {
+      await this.sqlExec(
+        engine,
+        cname,
+        databaseName,
+        [`ALTER USER ${this.myLit(username)}@'%' IDENTIFIED BY ${this.myLit(password)}`],
+        `Could not sync the database user "${username}"`,
+      );
+    }
+  }
+
+  /**
    * Apply the EXACT privilege set to a user (set semantics, matching the
    * panel's privilege checkboxes): everything else on the database scope is
    * revoked first, then every listed privilege is granted. Names are validated
