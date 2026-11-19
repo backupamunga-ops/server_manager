@@ -12,6 +12,7 @@ const MAX_ZIP_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_EXTRACTED_SIZE = 100 * 1024 * 1024; // 100 MB
 const MAX_ENTRIES = 100000;
 const UPLOAD_DIR = '/var/lib/cloudlane/uploads';
+const SOURCES_DIR = '/var/lib/cloudlane/sources';
 
 interface PendingUpload {
   id: string;
@@ -183,6 +184,37 @@ export class UploadsService {
       unlink(pending.stagedPath).catch(() => {});
     }
     pendingUploads.delete(uploadId);
+  }
+
+  /**
+   * Move a validated upload from staging to the permanent sources directory
+   * and return its recorded metadata. Called when a service is created so the
+   * deployment pipeline (and future redeploys) can always read the source.
+   */
+  async persist(uploadId: string): Promise<{ path: string; sha256: string; size: number }> {
+    const pending = pendingUploads.get(uploadId);
+    if (!pending || !pending.stagedPath) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Upload not found or not yet received.',
+      });
+    }
+    await mkdir(SOURCES_DIR, { recursive: true });
+    const finalPath = join(SOURCES_DIR, `${uploadId}.zip`);
+    if (pending.stagedPath !== finalPath) {
+      const { rename } = await import('node:fs/promises');
+      await rename(pending.stagedPath, finalPath);
+      pending.stagedPath = finalPath;
+    }
+    return { path: finalPath, sha256: pending.sha256, size: pending.size };
+  }
+
+  getSha256(uploadId: string): string {
+    return pendingUploads.get(uploadId)?.sha256 ?? '';
+  }
+
+  getFileSize(uploadId: string): number {
+    return pendingUploads.get(uploadId)?.size ?? 0;
   }
 
   /**

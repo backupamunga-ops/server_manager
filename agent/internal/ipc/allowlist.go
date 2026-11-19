@@ -6,6 +6,7 @@ var AllowedOperations = map[string]bool{
 	"release.startCandidate": true,
 	"release.stop":           true,
 	"release.inspect":        true,
+	"release.activate":       true,
 	"caddy.reload":           true,
 	"caddy.validate":         true,
 	"volume.create":          true,

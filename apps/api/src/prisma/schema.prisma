@@ -138,6 +138,7 @@ model Workspace {
   createdAt       DateTime @default(now())
   owner           User     @relation(fields: [ownerId], references: [id])
   projects        Project[]
+  domains         Domain[]
 }
 
 model Project {
@@ -336,8 +337,15 @@ enum AuditAction {
   DEPLOYMENT_ROLLED_BACK
   VARIABLE_ADDED
   VARIABLE_REMOVED
+  SERVICE_VARIABLE_SET
+  SERVICE_VARIABLE_DELETED
   AGENT_COMMAND_SENT
   AGENT_COMMAND_REJECTED
+  DOMAIN_ADDED
+  DOMAIN_VERIFIED
+  DOMAIN_VERIFY_FAILED
+  DOMAIN_DNS_MODE_SET
+  DOMAIN_REMOVED
 }
 
 model AuditEvent {
@@ -381,4 +389,34 @@ model Operation {
   startedAt       DateTime?
   finishedAt      DateTime?
   @@index([resourceType, resourceId, status])
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum DomainDnsMode {
+  MANUAL
+  MANAGED
+}
+
+/// Custom domain attached to the workspace (master guide section 06).
+/// One-field Add Domain; DNS mode changes only under domain Settings.
+model Domain {
+  id                String        @id @default(uuid())
+  workspaceId       String
+  host              String        @unique
+  status            DomainStatus  @default(PENDING)
+  dnsMode           DomainDnsMode @default(MANUAL)
+  verificationToken String        @unique
+  verifiedAt        DateTime?
+  lastCheckedAt     DateTime?
+  lastError         String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  workspace         Workspace     @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId])
 }

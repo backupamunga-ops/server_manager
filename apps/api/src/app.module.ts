@@ -10,8 +10,10 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { SessionMiddleware } from './modules/auth/session.middleware.js';
 import { BootstrapModule } from './modules/bootstrap/bootstrap.module.js';
 import { DeploymentsModule } from './modules/deployments/deployments.module.js';
+import { DomainsModule } from './modules/domains/domains.module.js';
 import { GithubModule } from './modules/github/github.module.js';
 import { InstallationModule } from './modules/installation/installation.module.js';
+import { OverviewModule } from './modules/overview/overview.module.js';
 import { ProjectsModule } from './modules/projects/projects.module.js';
 import { SecretsModule } from './modules/secrets/secrets.module.js';
 import { ServicesModule } from './modules/services/services.module.js';
@@ -34,6 +36,8 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
     AuthModule,
     ProjectsModule,
     ServicesModule,
+    DomainsModule,
+    OverviewModule,
     DeploymentsModule,
     UploadsModule,
     GithubModule,

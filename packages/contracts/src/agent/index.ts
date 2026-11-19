@@ -15,6 +15,7 @@ export type AgentOperation =
   | 'release.startCandidate'
   | 'release.stop'
   | 'release.inspect'
+  | 'release.activate'
   | 'caddy.reload'
   | 'caddy.validate'
   | 'volume.create'

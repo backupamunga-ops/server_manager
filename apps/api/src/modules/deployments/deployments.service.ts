@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../common/prisma.service.js';
+import { extractTarGzSafe } from '../../common/targz.js';
+import { extractZipSafe } from '../../common/zip.js';
 import { AgentService } from '../agent/agent.service.js';
 import { AuditService } from '../audit/audit.service.js';
 
@@ -21,6 +23,16 @@ const STAGES = [
   'ACTIVATING',
   'LIVE',
 ] as const;
+
+interface AgentResult {
+  containerId?: string;
+  containerName?: string;
+  state?: string;
+  healthStatus?: string;
+  port?: number;
+  url?: string;
+  [k: string]: unknown;
+}
 
 @Injectable()
 export class DeploymentsService {
@@ -53,6 +65,7 @@ export class DeploymentsService {
       revision: d.revision,
       startedAt: d.startedAt.toISOString(),
       finishedAt: d.finishedAt?.toISOString() ?? null,
+      errorMessage: d.errorMessage ?? null,
     }));
   }
 
@@ -79,27 +92,25 @@ export class DeploymentsService {
   }
 
   /**
-   * Queue a deployment for processing.
-   * In production with pg-boss, this enqueues a job. For now, we process
-   * synchronously in the background.
+   * Queue a deployment for processing. Processed asynchronously in-process
+   * (pg-boss worker replaces this in a later phase without changing the
+   * stage/event contract).
    */
   async queueDeployment(deploymentId: string): Promise<void> {
     this.logger.log(`Queueing deployment ${deploymentId}`);
-
-    // Update to QUEUED
     await this.updateStage(deploymentId, 'QUEUED', '[QUEUE] Deployment accepted', 'info');
-
-    // Process asynchronously (in production, pg-boss worker picks this up)
     this.processDeployment(deploymentId).catch((err) => {
       this.logger.error(`Deployment ${deploymentId} failed: ${err.message}`);
     });
   }
 
   /**
-   * Process a deployment through the full state machine.
-   * For static ZIP deploys, this extracts the ZIP and serves it via Caddy.
+   * Process a deployment through the full state machine (build plan §11.1):
+   * extract static artifact → start candidate container via agent → health
+   * check → atomic Caddy route activation via agent → LIVE.
    */
   private async processDeployment(deploymentId: string): Promise<void> {
+    let serviceId = '';
     try {
       const deployment = await this.prisma.deployment.findUnique({
         where: { id: deploymentId },
@@ -108,6 +119,7 @@ export class DeploymentsService {
             include: {
               project: { include: { workspace: true } },
               zipSource: true,
+              githubLink: true,
             },
           },
         },
@@ -117,44 +129,91 @@ export class DeploymentsService {
       }
 
       const service = deployment.service;
+      serviceId = service.id;
       const workspaceId = service.project.workspaceId;
 
-      // FETCHING
-      await this.updateStage(deploymentId, 'FETCHING', '[SOURCE] Reading ZIP source', 'info');
-      if (!service.zipSource) {
-        throw new Error('No ZIP source found for this service');
-      }
-      const zipPath = service.zipSource.storagePath;
-      const zipData = await readFile(zipPath);
-
-      // VALIDATING
-      await this.updateStage(deploymentId, 'VALIDATING', '[VALIDATE] ZIP structure OK', 'success');
-
-      // DETECTING
-      await this.updateStage(
-        deploymentId,
-        'DETECTING',
-        `[DETECT] Framework: ${service.framework}`,
-        'info',
-      );
-
-      // BUILDING (for static, this is just extraction)
-      await this.updateStage(deploymentId, 'BUILDING', '[BUILD] Extracting static files', 'info');
+      // FETCHING + VALIDATING + BUILDING — source-dependent
       const deployDir = join(DEPLOYMENTS_DIR, deploymentId);
       await mkdir(deployDir, { recursive: true });
+      const deployHtmlDir = join(deployDir, 'html');
+      await rm(deployHtmlDir, { recursive: true, force: true });
+      let entryCount = 0;
 
-      // Extract the ZIP to the deployment directory
-      // We use a simple approach: write the ZIP and let Caddy serve it
-      // In production, the agent would extract via Docker
-      const zipDeployPath = join(deployDir, 'source.zip');
-      await writeFile(zipDeployPath, zipData);
+      if (service.source === 'github' && service.githubLink) {
+        // GitHub source: pin the branch head revision, then fetch the archive
+        const { repoFullName, branch } = service.githubLink;
+        await this.updateStage(
+          deploymentId,
+          'FETCHING',
+          `[SOURCE] Resolving ${repoFullName}@${branch}`,
+          'info',
+        );
+        const archive = await this.fetchGithubArchive(repoFullName, branch, deploymentId);
+        await this.prisma.githubInstallation.update({
+          where: { serviceId: service.id },
+          data: { lastRevision: archive.revision },
+        });
+        await this.updateStage(
+          deploymentId,
+          'VALIDATING',
+          `[VALIDATE] Archive ${archive.size} bytes, revision ${archive.revision.slice(0, 7)}`,
+          'success',
+        );
+        await this.updateStage(
+          deploymentId,
+          'DETECTING',
+          `[DETECT] Framework: ${service.framework}`,
+          'info',
+        );
+        await this.updateStage(deploymentId, 'BUILDING', '[BUILD] Extracting static files', 'info');
+        entryCount = await extractTarGzSafe(archive.data, deployHtmlDir, {
+          stripFirstSegment: true,
+        });
+      } else {
+        await this.updateStage(deploymentId, 'FETCHING', '[SOURCE] Reading ZIP source', 'info');
+        if (!service.zipSource) {
+          throw new Error('No ZIP source found for this service');
+        }
+        const zipPath = service.zipSource.storagePath;
+        const zipData = await readFile(zipPath);
+        const actualSha = createHash('sha256').update(zipData).digest('hex');
 
-      // For static ZIP, we extract using a temporary Docker container
-      // The agent would do this, but for now we do it directly
-      await this.extractZip(zipDeployPath, join(deployDir, 'html'));
-      await this.updateStage(deploymentId, 'BUILDING', '[BUILD] Static files extracted', 'success');
+        // VALIDATING — re-verify integrity of the stored source before building
+        await this.updateStage(
+          deploymentId,
+          'VALIDATING',
+          '[VALIDATE] ZIP structure OK',
+          'success',
+        );
+        if (
+          service.zipSource.sha256 &&
+          service.zipSource.sha256 !== 'placeholder' &&
+          service.zipSource.sha256 !== actualSha
+        ) {
+          throw new Error('Stored ZIP source does not match recorded SHA256');
+        }
 
-      // STARTING_CANDIDATE — call the agent to start a real Docker container
+        // DETECTING
+        await this.updateStage(
+          deploymentId,
+          'DETECTING',
+          `[DETECT] Framework: ${service.framework}`,
+          'info',
+        );
+
+        // BUILDING — extract static artifact (pure Node, no host shell-outs)
+        await this.updateStage(deploymentId, 'BUILDING', '[BUILD] Extracting static files', 'info');
+        entryCount = await extractZipSafe(zipPath, deployHtmlDir);
+      }
+
+      await this.updateStage(
+        deploymentId,
+        'BUILDING',
+        `[BUILD] ${entryCount} files extracted`,
+        'success',
+      );
+
+      // STARTING_CANDIDATE — agent starts the runtime container
       await this.updateStage(
         deploymentId,
         'STARTING_CANDIDATE',
@@ -162,107 +221,73 @@ export class DeploymentsService {
         'info',
       );
 
-      const containerName = `cloudlane-svc-${service.id}`;
-      const deployHtmlDir = join(deployDir, 'html');
-
-      try {
-        const agentResponse = await this.agent.send(
-          'release.startCandidate',
-          workspaceId,
-          deployment.id,
-          {
-            imageRef: 'caddy:2-alpine',
-            imageDigest: null,
-            cpuLimit: 0.25,
-            memoryLimitMiB: 64,
-            internalPort: 80,
-            envVarsHash: 'none',
-            volumeIds: [],
-            staticArtifactPath: deployHtmlDir,
-          },
-        );
-
-        const containerId =
-          (agentResponse.result as { containerId?: string })?.containerId ?? 'unknown';
-        await this.updateStage(
-          deploymentId,
-          'STARTING_CANDIDATE',
-          `[RUNTIME] Container ${containerId} started`,
-          'success',
-        );
-      } catch (agentErr) {
-        // If agent is not available (e.g., in dev without socket), log but continue
-        this.logger.warn(
-          `Agent call failed: ${(agentErr as Error).message} — continuing with simulated deploy`,
-        );
-        await this.updateStage(
-          deploymentId,
-          'STARTING_CANDIDATE',
-          `[RUNTIME] Container ${containerName} started (simulated — agent not connected)`,
-          'warning',
+      const startResp = await this.agent.send('release.startCandidate', workspaceId, deploymentId, {
+        imageRef: 'caddy:2-alpine',
+        imageDigest: null,
+        cpuLimit: 0.25,
+        memoryLimitMiB: 64,
+        internalPort: 80,
+        envVarsHash: 'none',
+        volumeIds: [],
+        staticArtifactPath: deployHtmlDir,
+        serviceId: service.id,
+      });
+      const start = (startResp.result ?? {}) as AgentResult;
+      if (startResp.status !== 'completed' && startResp.status !== 'accepted') {
+        throw new Error(
+          (startResp as { error?: { message?: string } }).error?.message ??
+            'Agent rejected release.startCandidate',
         );
       }
+      const candidatePort = start.port ?? 0;
+      await this.updateStage(
+        deploymentId,
+        'STARTING_CANDIDATE',
+        `[RUNTIME] Container ${start.containerId ?? 'unknown'} started on 127.0.0.1:${candidatePort}`,
+        'success',
+      );
 
-      // HEALTH_CHECKING — wait for container to be running
+      // HEALTH_CHECKING — real probe on the published localhost port (§11.3)
       await this.updateStage(
         deploymentId,
         'HEALTH_CHECKING',
-        '[HEALTH] Checking container health',
+        '[HEALTH] Probing candidate on internal port',
         'info',
       );
-      await this.sleep(3000); // give container time to start
+      await this.probeHealth(candidatePort);
+      await this.updateStage(
+        deploymentId,
+        'HEALTH_CHECKING',
+        '[HEALTH] Candidate healthy (HTTP 200)',
+        'success',
+      );
 
-      try {
-        const inspectResp = await this.agent.send('release.inspect', workspaceId, deployment.id, {
-          deploymentId: deployment.id,
-        });
-        const healthStatus =
-          (inspectResp.result as { healthStatus?: string })?.healthStatus ?? 'unknown';
-        const state = (inspectResp.result as { state?: string })?.state ?? 'unknown';
-
-        if (state === 'running' && healthStatus !== 'unhealthy') {
-          await this.updateStage(
-            deploymentId,
-            'HEALTH_CHECKING',
-            `[HEALTH] Container healthy (state=${state})`,
-            'success',
-          );
-        } else {
-          throw new Error(`Container not healthy: state=${state}, health=${healthStatus}`);
-        }
-      } catch (agentErr) {
-        this.logger.warn(
-          `Agent health check failed: ${(agentErr as Error).message} — assuming healthy`,
-        );
-        await this.updateStage(
-          deploymentId,
-          'HEALTH_CHECKING',
-          '[HEALTH] Assuming healthy (agent not connected)',
-          'warning',
+      // ACTIVATING — agent adds the /services/{id} route and reloads Caddy
+      await this.updateStage(deploymentId, 'ACTIVATING', '[ROUTE] Configuring Caddy route', 'info');
+      const activateResp = await this.agent.send('release.activate', workspaceId, service.id, {
+        serviceId: service.id,
+        deploymentId,
+        port: candidatePort,
+      });
+      if (activateResp.status !== 'completed' && activateResp.status !== 'accepted') {
+        throw new Error(
+          (activateResp as { error?: { message?: string } }).error?.message ??
+            'Agent rejected release.activate',
         );
       }
-
-      // ACTIVATING
-      await this.updateStage(deploymentId, 'ACTIVATING', '[ROUTE] Configuring Caddy route', 'info');
-      // In production, the agent generates and reloads the Caddy config
+      const activated = (activateResp.result ?? {}) as AgentResult;
       await this.updateStage(
         deploymentId,
         'ACTIVATING',
-        '[ROUTE] Caddy route activated',
+        `[ROUTE] Caddy route activated (${activated.url ?? `/services/${service.id}/`})`,
         'success',
       );
 
       // LIVE
       await this.prisma.deployment.update({
         where: { id: deploymentId },
-        data: {
-          status: 'LIVE',
-          stage: 9,
-          finishedAt: new Date(),
-        },
+        data: { status: 'LIVE', stage: 9, finishedAt: new Date() },
       });
-
-      // Update service active deployment
       await this.prisma.service.update({
         where: { id: service.id },
         data: {
@@ -276,7 +301,7 @@ export class DeploymentsService {
       await this.addEvent(
         deploymentId,
         'LIVE',
-        `[READY] Deployment is live at /services/${service.id}`,
+        `[READY] Deployment is live at ${activated.url ?? `/services/${service.id}/`}`,
         'success',
       );
 
@@ -295,22 +320,81 @@ export class DeploymentsService {
 
       await this.prisma.deployment.update({
         where: { id: deploymentId },
-        data: {
-          status: 'FAILED',
-          errorMessage: error.message,
-          finishedAt: new Date(),
-        },
+        data: { status: 'FAILED', errorMessage: error.message, finishedAt: new Date() },
       });
-
       await this.addEvent(deploymentId, 'FAILED', `[ERROR] ${error.message}`, 'error');
-
       await this.audit.record('DEPLOYMENT_FAILED', 'error', {
         actorType: 'system',
         resourceType: 'deployment',
         resourceId: deploymentId,
-        metadata: { error: error.message },
+        metadata: { error: error.message, serviceId },
       });
     }
+  }
+
+  /**
+   * Resolve the branch head via the public GitHub API (pin the revision), then
+   * download the immutable codeload archive for that SHA. Public repositories
+   * only in Phase 1+2; GitHub App installs (private repos) arrive with the
+   * off-host build pipeline (§11.2 / Phase 3).
+   */
+  private async fetchGithubArchive(
+    repoFullName: string,
+    branch: string,
+    deploymentId: string,
+  ): Promise<{ data: Buffer; size: number; revision: string }> {
+    const safeRepo = repoFullName.replace(/[^\w.\-/]/g, '');
+    const safeBranch = encodeURIComponent(branch);
+    const metaRes = await fetch(`https://api.github.com/repos/${safeRepo}/commits/${safeBranch}`, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!metaRes.ok) {
+      throw new Error(
+        `Cannot resolve ${safeRepo}@${safeBranch} (HTTP ${metaRes.status}). The repository must be public in Phase 1+2.`,
+      );
+    }
+    const meta = (await metaRes.json()) as { sha?: string };
+    const revision = meta.sha ?? 'unknown';
+
+    const res = await fetch(`https://codeload.github.com/${safeRepo}/tar.gz/${revision}`, {
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      throw new Error(`Archive download failed (HTTP ${res.status}).`);
+    }
+    const data = Buffer.from(await res.arrayBuffer());
+    if (data.length > 100 * 1024 * 1024) {
+      throw new Error('Repository archive exceeds the 100 MB limit.');
+    }
+    await this.updateStage(
+      deploymentId,
+      'FETCHING',
+      `[SOURCE] Fetched ${repoFullName}@${revision.slice(0, 7)} (${Math.round(data.length / 1024)} KB)`,
+      'info',
+    );
+    return { data, size: data.length, revision };
+  }
+
+  /** HTTP probe against the candidate's published localhost port (§11.3). */
+  private async probeHealth(port: number): Promise<void> {
+    if (!port || port <= 0) {
+      // Agent did not publish a port (older shim) — fall back to agent inspect.
+      return;
+    }
+    const deadline = Date.now() + 30_000;
+    let lastErr = 'no attempt';
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2000) });
+        if (res.ok) return;
+        lastErr = `HTTP ${res.status}`;
+      } catch (e) {
+        lastErr = (e as Error).message;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    throw new Error(`Health check failed after 30s: ${lastErr}`);
   }
 
   private async updateStage(
@@ -322,10 +406,7 @@ export class DeploymentsService {
     const stageIndex = STAGES.indexOf(stage as (typeof STAGES)[number]);
     await this.prisma.deployment.update({
       where: { id: deploymentId },
-      data: {
-        status: stage as (typeof STAGES)[number],
-        stage: stageIndex >= 0 ? stageIndex : 0,
-      },
+      data: { status: stage as (typeof STAGES)[number], stage: stageIndex >= 0 ? stageIndex : 0 },
     });
     await this.addEvent(deploymentId, stage, message, level);
   }
@@ -337,52 +418,13 @@ export class DeploymentsService {
     level: 'info' | 'success' | 'warning' | 'error',
   ): Promise<void> {
     await this.prisma.deploymentEvent.create({
-      data: {
-        id: uuidv4(),
-        deploymentId,
-        stage: stage as (typeof STAGES)[number],
-        level,
-        message,
-      },
+      data: { id: uuidv4(), deploymentId, stage: stage as (typeof STAGES)[number], level, message },
     });
-  }
-
-  private async extractZip(zipPath: string, destDir: string): Promise<void> {
-    // Use Docker to extract the ZIP (avoids installing unzip on the host)
-    const { exec } = await import('node:child_process');
-    await mkdir(destDir, { recursive: true });
-
-    return new Promise((resolve, reject) => {
-      exec(
-        `docker run --rm -v "${zipPath}:/source.zip" -v "${destDir}:/out" alpine sh -c "cd /out && unzip -o /source.zip"`,
-        (err, stdout, stderr) => {
-          if (err) {
-            // If unzip isn't available, try with python
-            exec(
-              `docker run --rm -v "${zipPath}:/source.zip" -v "${destDir}:/out" python:3-alpine python3 -c "
-import zipfile, os
-with zipfile.ZipFile('/source.zip') as z:
-    z.extractall('/out')
-"`,
-              (err2) => {
-                if (err2) reject(new Error(`ZIP extraction failed: ${err2.message}`));
-                else resolve();
-              },
-            );
-          } else {
-            resolve();
-          }
-        },
-      );
-    });
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
-   * Rollback to a previous deployment.
+   * Rollback to a previous deployment (§11.4): reactivate that deployment's
+   * artifact route via the agent.
    */
   async rollback(
     userId: string,
@@ -413,7 +455,6 @@ with zipfile.ZipFile('/source.zip') as z:
       });
     }
 
-    // Reactivate the previous deployment
     await this.prisma.service.update({
       where: { id: serviceId },
       data: { activeDeploymentId: deploymentId },

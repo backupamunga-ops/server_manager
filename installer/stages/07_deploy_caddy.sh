@@ -55,7 +55,7 @@ fi
 
 # Render initial Caddyfile (internal cert, no ACME yet)
 log_info "Rendering initial Caddyfile (internal cert)..."
-mkdir -p /etc/caddy
+mkdir -p /etc/caddy /etc/caddy/services
 
 if [[ -n "$PUBLIC_IP6" && "$PUBLIC_IP6" != "$PUBLIC_IP4" ]]; then
   IP_BLOCK="$PUBLIC_IP4, $PUBLIC_IP6"
@@ -76,6 +76,9 @@ https://$IP_BLOCK {
   handle /api/v1/* {
     reverse_proxy localhost:3000
   }
+
+  # Per-service routes managed by the agent (release.activate)
+  import /etc/caddy/services/*.caddy
 
   handle {
     root * /opt/cloudlane/dashboard
