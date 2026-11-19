@@ -6,10 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import type { PrismaService } from '../../common/prisma.service.js';
-import type { AuditService } from '../audit/audit.service.js';
-import type { DeploymentsService } from '../deployments/deployments.service.js';
-import type { UploadsService } from '../uploads/uploads.service.js';
+import { PrismaService } from '../../common/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { DeploymentsService } from '../deployments/deployments.service.js';
+import { UploadsService } from '../uploads/uploads.service.js';
 
 const serviceNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 

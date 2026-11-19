@@ -1,7 +1,7 @@
 import type { SessionInfo } from '@cloudlane/contracts';
 import { Injectable, type NestMiddleware, UnauthorizedException } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
-import type { PrismaService } from '../../common/prisma.service.js';
+import { PrismaService } from '../../common/prisma.service.js';
 
 interface RequestWithSession extends Request {
   user?: SessionInfo;

@@ -1,9 +1,9 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { authenticator } from 'otplib';
-import type { PrismaService } from '../../common/prisma.service.js';
-import type { SecretsService } from '../secrets/secrets.service.js';
+import { PrismaService } from '../../common/prisma.service.js';
+import { SecretsService } from '../secrets/secrets.service.js';
 
 @Injectable()
 export class MfaService {

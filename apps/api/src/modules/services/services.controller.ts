@@ -13,7 +13,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { SessionGuard } from '../../common/guards/session.guard.js';
-import type { ServicesService } from './services.service.js';
+import { ServicesService } from './services.service.js';
 
 class CreateZipServiceDto {
   @IsString()

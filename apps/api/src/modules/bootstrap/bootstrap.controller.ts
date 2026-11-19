@@ -12,7 +12,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import type { Request } from 'express';
 import { Public } from '../../common/decorators/public.decorator.js';
-import type { BootstrapService } from './bootstrap.service.js';
+import { BootstrapService } from './bootstrap.service.js';
 
 class ClaimDto {
   @IsString()

@@ -19,8 +19,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { SessionGuard } from '../../common/guards/session.guard.js';
 import { RequireStepUp, StepUpGuard } from '../../common/guards/step-up.guard.js';
-import type { AuthService } from './auth.service.js';
-import type { SessionService } from './session.service.js';
+import { AuthService } from './auth.service.js';
+import { SessionService } from './session.service.js';
 
 class LoginDto {
   @IsEmail()

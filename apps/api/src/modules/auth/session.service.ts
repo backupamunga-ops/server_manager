@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
-import type { PrismaService } from '../../common/prisma.service.js';
-import type { SecretsService } from '../secrets/secrets.service.js';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../common/prisma.service.js';
+import { SecretsService } from '../secrets/secrets.service.js';
 import { addMinutes } from './time-utils.js';
 
 const SESSION_BYTES = 32;

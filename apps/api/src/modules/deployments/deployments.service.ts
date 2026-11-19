@@ -3,9 +3,9 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import type { PrismaService } from '../../common/prisma.service.js';
-import type { AgentService } from '../agent/agent.service.js';
-import type { AuditService } from '../audit/audit.service.js';
+import { PrismaService } from '../../common/prisma.service.js';
+import { AgentService } from '../agent/agent.service.js';
+import { AuditService } from '../audit/audit.service.js';
 
 const DEPLOYMENTS_DIR = '/var/lib/cloudlane/deployments';
 

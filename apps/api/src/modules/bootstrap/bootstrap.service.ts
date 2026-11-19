@@ -14,16 +14,16 @@ class TooManyRequestsException extends HttpException {
   }
 }
 import { createHash, randomBytes } from 'node:crypto';
-import type { ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { authenticator } from 'otplib';
 import { v4 as uuidv4 } from 'uuid';
-import type { PrismaService } from '../../common/prisma.service.js';
-import type { AuditService } from '../audit/audit.service.js';
-import type { MfaService } from '../auth/mfa.service.js';
-import type { PasswordService } from '../auth/password.service.js';
-import type { SessionService } from '../auth/session.service.js';
+import { PrismaService } from '../../common/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { MfaService } from '../auth/mfa.service.js';
+import { PasswordService } from '../auth/password.service.js';
+import { SessionService } from '../auth/session.service.js';
 import { addMinutes, isExpired } from '../auth/time-utils.js';
-import type { SecretsService } from '../secrets/secrets.service.js';
+import { SecretsService } from '../secrets/secrets.service.js';
 
 interface PendingClaim {
   token: string;

@@ -14,7 +14,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsNumber, IsString, Max, Min } from 'class-validator';
 import type { Request } from 'express';
 import { SessionGuard } from '../../common/guards/session.guard.js';
-import type { UploadsService } from './uploads.service.js';
+import { UploadsService } from './uploads.service.js';
 
 class UploadInitDto {
   @IsString() filename!: string;

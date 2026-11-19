@@ -5,8 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
-import type { PrismaService } from '../../common/prisma.service.js';
-import type { AuditService } from '../audit/audit.service.js';
+import { PrismaService } from '../../common/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 
 const slugPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 

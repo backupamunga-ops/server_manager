@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { UnauthorizedException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
+import { ConfigService } from '@nestjs/config';
 import { authenticator } from 'otplib';
-import type { PrismaService } from '../../common/prisma.service.js';
-import type { AuditService } from '../audit/audit.service.js';
-import type { MfaService } from './mfa.service.js';
-import type { PasswordService } from './password.service.js';
-import type { SessionService } from './session.service.js';
+import { PrismaService } from '../../common/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { MfaService } from './mfa.service.js';
+import { PasswordService } from './password.service.js';
+import { SessionService } from './session.service.js';
 import { addMinutes } from './time-utils.js';
 
 class TooManyRequestsException extends HttpException {

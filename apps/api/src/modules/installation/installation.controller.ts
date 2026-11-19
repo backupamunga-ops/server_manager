@@ -2,7 +2,7 @@ import type { InstallationStatusResponse } from '@cloudlane/contracts';
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator.js';
-import type { InstallationService } from './installation.service.js';
+import { InstallationService } from './installation.service.js';
 
 @ApiTags('installation')
 @Controller('installation')

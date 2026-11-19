@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import type { Reflector } from '@nestjs/core';
+import { Reflector } from '@nestjs/core';
 import type { AuthenticatedRequest } from './session.guard.js';
 
 export const STEP_UP_KEY = 'requiresStepUp';

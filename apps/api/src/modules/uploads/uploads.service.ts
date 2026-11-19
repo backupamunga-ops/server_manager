@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
-import type { PrismaService } from '../../common/prisma.service.js';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../common/prisma.service.js';
 
 const MAX_ZIP_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_EXTRACTED_SIZE = 100 * 1024 * 1024; // 100 MB

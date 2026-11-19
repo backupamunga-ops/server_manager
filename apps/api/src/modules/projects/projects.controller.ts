@@ -15,7 +15,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { SessionGuard } from '../../common/guards/session.guard.js';
-import type { ProjectsService } from './projects.service.js';
+import { ProjectsService } from './projects.service.js';
 
 class CreateProjectDto {
   @IsString()
