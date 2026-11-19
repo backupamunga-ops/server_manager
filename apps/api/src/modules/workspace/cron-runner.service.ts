@@ -2,7 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@ne
 import { PrismaService } from '../../common/prisma.service.js';
 import pkg from 'cron-parser';
 
-const { parseExpression } = pkg as { parseExpression: (expr: string, opts?: Record<string, unknown>) => { prev: () => Date; next: () => Date } };
+const { parseExpression } = pkg as unknown as { parseExpression: (expr: string, opts?: Record<string, unknown>) => { prev: () => Date; next: () => Date } };
 
 const TICK_MS = 30_000;
 const RUN_TIMEOUT_MS = 12_000;
