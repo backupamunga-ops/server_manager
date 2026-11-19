@@ -1,0 +1,42 @@
+# Cloudlane production Caddy configuration
+#
+# Replaces the current panel-only site block with:
+#   1. The panel itself on server.billucsolutions.co.ke (and the raw IP),
+#      keeping the existing /services/<id>/ path previews for every deployed app.
+#   2. A top-level `import /etc/caddy/hostnames/*.caddy` — the domain pipeline
+#      (DomainPipelineService.routeFor) detects this line and switches to real
+#      hostname routing: each connected hostname gets its own site block with
+#      its own automatic certificate (vercel-style).
+#   3. On-demand TLS guarded by the panel: only hostnames registered in the
+#      Cloudlane domain registry can obtain a certificate.
+#
+# Requires the DNS records in docs/PRODUCTION_DOMAIN_SETUP.md to exist first.
+
+{
+	on_demand_tls {
+		ask http://127.0.0.1:3000/api/v1/domains/ondemand-ask
+	}
+}
+
+# Panel + platform API + path-style previews (existing behaviour preserved).
+server.billucsolutions.co.ke, 95.211.164.33 {
+	import /etc/caddy/services/*.caddy
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		root * /opt/cloudlane/dashboard
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Vercel-style application hostnames. Each file in /etc/caddy/hostnames/
+# is a full site block written by the domain pipeline, e.g.:
+#   shop.apps.billucsolutions.co.ke {
+#       reverse_proxy 127.0.0.1:4321
+#   }
+# Certificates are issued on demand and gated by ondemand-ask above.
+import /etc/caddy/hostnames/*.caddy

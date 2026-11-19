@@ -7,6 +7,7 @@
  * the scaffolding layer that the pipeline agents upgrade to full VPS wiring.
  */
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma.service.js';
 import { SecretsService } from '../secrets/secrets.service.js';
 import { seedWorkspace } from './seed.js';
@@ -54,10 +55,16 @@ export class WorkspaceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly secrets: SecretsService,
+    private readonly config: ConfigService,
     private readonly databases: DatabasePipelineService,
     private readonly domains: DomainPipelineService,
     private readonly apps: AppPipelineService,
   ) {}
+
+  /** Platform-generated application URL suffix (vercel-style previews). */
+  private get appSuffix(): string {
+    return this.config.get<string>('PLATFORM_APP_SUFFIX') ?? 'apps.example.test';
+  }
 
   private async workspaceFor(userId: string) {
     const ws = await this.prisma.workspace.findUnique({ where: { ownerId: userId } });
@@ -726,8 +733,9 @@ export class WorkspaceService {
             verificationToken: uid('verify') },
         });
         try {
-          await this.domains.routeFor(h.name, { id: s.id, name: s.name });
-          await this.activity(wsId, 'Caddy route activated', `${h.name} → ${s.name}`, 'domain');
+          const route = await this.domains.routeFor(h.name, { id: s.id, name: s.name });
+          await this.activity(wsId, 'Caddy route activated',
+            `${h.name} → ${s.name} (${route.routePath})`, 'domain');
         } catch (err) {
           await this.activity(wsId, 'Route pending',
             `${h.name}: ${(err as Error).message.slice(0, 140)}`, 'domain');
@@ -1045,7 +1053,8 @@ export class WorkspaceService {
         const count = allDomains.filter((d) => d.host.startsWith(`${slug}.`)).length;
         await this.prisma.domain.create({
           data: {
-            workspaceId: wsId, host: `${slug}${count ? '-' + s.id.slice(-3) : ''}.apps.example.test`,
+            workspaceId: wsId,
+            host: `${slug}${count ? '-' + s.id.slice(-3) : ''}.${this.appSuffix}`,
             status: 'VERIFIED', dnsMode: 'MANUAL', verificationToken: uid('verify'),
           },
         });
