@@ -20,10 +20,8 @@ export class MfaService {
     private readonly secrets: SecretsService,
     config: ConfigService,
   ) {
-    authenticator.options = { window: this.window, step: 30 };
-    // otpauth:// URLs use the issuer from env
     const issuer = config.get<string>('INSTANCE_ID', 'cloudlane');
-    authenticator.options.issuer = issuer;
+    authenticator.options = { window: this.window, step: 30, issuer: issuer };
   }
 
   /** Generate a new TOTP secret (base32, 20 bytes entropy). */
