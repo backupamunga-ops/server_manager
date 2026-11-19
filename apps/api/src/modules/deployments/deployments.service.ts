@@ -61,14 +61,18 @@ export class DeploymentsService {
     const slug = serviceName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
     if (!slug) return;
     const candidates = [`${slug}.${suffix}`, `${slug}-${serviceId.slice(-4)}.${suffix}`];
-    // Wait until the agent state reflects THIS deployment, so the route always
-    // points at the fresh container (max ~12s; the catch keeps it best-effort).
-    for (let attempt = 0; attempt < 8; attempt++) {
-      try {
-        const rt = await this.domainsPipeline.serviceRuntime(serviceId);
-        if (!deploymentId || rt.deploymentId === deploymentId) break;
-      } catch { /* ignore */ }
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Write routes ONLY once the agent state reflects THIS deployment — a
+    // mismatch means the port would be stale, which is worse than no write.
+    if (deploymentId) {
+      let matched = false;
+      for (let attempt = 0; attempt < 24 && !matched; attempt++) {
+        try {
+          const rt = await this.domainsPipeline.serviceRuntime(serviceId);
+          if (rt.deploymentId === deploymentId) matched = true;
+        } catch { /* ignore */ }
+        if (!matched) await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      if (!matched) return;
     }
     for (const host of candidates) {
       const d = await this.prisma.domain.findFirst({ where: { host, workspaceId } });
