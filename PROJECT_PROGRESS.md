@@ -21,6 +21,25 @@
 | GitHub App integration | Not started | Phase 3 |
 | Production VPS install | Verified | deployed on VPS: API :3000, agent, Caddy :80/:443, Postgres :5432, Garage S3 :3900 |
 
+## Feature batch — 2026-11-19 (deploy pipeline + full dashboard)
+
+- Deploy pipeline verified end-to-end on the deployment VPS: ZIP upload
+  (init → receive → finalize → deploy → LIVE at /services/{id}/) and GitHub
+  public-repo deploy (mdn/beginner-html-site-styled served live). Real
+  extraction (pure Node), agent-published localhost ports, HTTP health probe,
+  atomic Caddy route activation, previous-container cleanup. Commits
+  ca75e6b, 65086ab, 02f42ce.
+- Full dashboard shipped (ccd86e2): Drevanta-faithful shell (5 palettes,
+  dark mode), modernized sign-in + 4-step onboarding wizard, Overview /
+  Projects / service detail (Deployments, Logs, Variables, Domains,
+  Settings tabs) / Domains (one-field add + TXT verification) / Activity &
+  Logs / Settings. Deploy wizard handles ZIP + GitHub with live pipeline log.
+- New API surface: domains (Prisma Domain model), service variables
+  (encrypted, step-up), audit-events, overview + server info, redeploy.
+- Visual verification: Playwright screenshots of live panel (overview,
+  projects, service detail tabs, domains, activity, settings, login,
+  setup, mobile login) — all render per design system.
+
 ## Reconciliation record — 2026-11-19
 
 - VPS working tree (uncommitted build state on top of `8487b99`) committed and pushed as
