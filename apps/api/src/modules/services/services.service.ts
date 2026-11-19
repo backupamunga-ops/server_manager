@@ -152,13 +152,13 @@ export class ServicesService {
       });
     }
 
-    const env = project.environments.find((e) => e.name === 'production');
-    if (!env) {
-      throw new NotFoundException({
-        code: 'NOT_FOUND',
-        message: 'Production environment not found.',
-      });
-    }
+    // Projects created before environments existed have none — create it
+    // instead of failing the deployment.
+    const env = await this.prisma.environment.upsert({
+      where: { projectId_name: { projectId, name: 'production' } },
+      create: { projectId, name: 'production' },
+      update: {},
+    });
 
     // Persist the upload into the permanent sources store and read its metadata
     const staged = await this.uploads.persist(uploadId);
@@ -279,13 +279,11 @@ export class ServicesService {
         message: `Service "${name}" already exists in this project.`,
       });
     }
-    const env = project.environments.find((e) => e.name === 'production');
-    if (!env) {
-      throw new NotFoundException({
-        code: 'NOT_FOUND',
-        message: 'Production environment not found.',
-      });
-    }
+    const env = await this.prisma.environment.upsert({
+      where: { projectId_name: { projectId, name: 'production' } },
+      create: { projectId, name: 'production' },
+      update: {},
+    });
 
     // installationId 0 = no GitHub App install; Phase 1+2 fetches public repos.
     const effectiveInstallationId = installationId > 0 ? installationId : 0;

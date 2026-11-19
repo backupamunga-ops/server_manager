@@ -270,6 +270,7 @@ export class WorkspaceService {
       data: {
         workspaceId: wsId, name,
         slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || uid('project'),
+        environments: { create: { name: 'production' } },
       },
     });
     await this.activity(wsId, 'Project created', name, 'project');
