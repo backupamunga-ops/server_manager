@@ -15,7 +15,8 @@
     "verbatimModuleSyntax": false,
     "resolveJsonModule": true,
     "types": [
-      "node"
+      "node",
+      "multer"
     ],
     "noUncheckedIndexedAccess": false,
     "strict": false,
