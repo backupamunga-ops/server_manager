@@ -9,6 +9,7 @@ func TestAllowedOperationsContainsExpectedOps(t *testing.T) {
 		"release.startCandidate",
 		"release.stop",
 		"release.inspect",
+		"release.activate",
 		"caddy.reload",
 		"caddy.validate",
 		"volume.create",
