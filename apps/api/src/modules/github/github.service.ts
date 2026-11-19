@@ -1,5 +1,5 @@
-import { Injectable, NotImplementedException } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { Injectable, NotImplementedException } from '@nestjs/common';
 
 @Injectable()
 export class GithubService {
@@ -10,7 +10,11 @@ export class GithubService {
     });
   }
 
-  async handleCallback(installationId: string, code: string, state: string): Promise<{ success: true }> {
+  async handleCallback(
+    installationId: string,
+    code: string,
+    state: string,
+  ): Promise<{ success: true }> {
     throw new NotImplementedException({
       code: 'NOT_IMPLEMENTED',
       message: 'GitHub App callback is implemented in CL-055.',

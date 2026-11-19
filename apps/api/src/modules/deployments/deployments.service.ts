@@ -1,17 +1,25 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma.service.js';
-import { AuditService } from '../audit/audit.service.js';
-import { AgentService } from '../agent/agent.service.js';
-import { readFile, mkdir, writeFile, rm, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
+import type { PrismaService } from '../../common/prisma.service.js';
+import type { AgentService } from '../agent/agent.service.js';
+import type { AuditService } from '../audit/audit.service.js';
 
 const DEPLOYMENTS_DIR = '/var/lib/cloudlane/deployments';
 
 const STAGES = [
-  'REQUESTED', 'QUEUED', 'FETCHING', 'VALIDATING', 'DETECTING',
-  'BUILDING', 'STARTING_CANDIDATE', 'HEALTH_CHECKING', 'ACTIVATING', 'LIVE',
+  'REQUESTED',
+  'QUEUED',
+  'FETCHING',
+  'VALIDATING',
+  'DETECTING',
+  'BUILDING',
+  'STARTING_CANDIDATE',
+  'HEALTH_CHECKING',
+  'ACTIVATING',
+  'LIVE',
 ] as const;
 
 @Injectable()
@@ -123,7 +131,12 @@ export class DeploymentsService {
       await this.updateStage(deploymentId, 'VALIDATING', '[VALIDATE] ZIP structure OK', 'success');
 
       // DETECTING
-      await this.updateStage(deploymentId, 'DETECTING', `[DETECT] Framework: ${service.framework}`, 'info');
+      await this.updateStage(
+        deploymentId,
+        'DETECTING',
+        `[DETECT] Framework: ${service.framework}`,
+        'info',
+      );
 
       // BUILDING (for static, this is just extraction)
       await this.updateStage(deploymentId, 'BUILDING', '[BUILD] Extracting static files', 'info');
@@ -142,7 +155,12 @@ export class DeploymentsService {
       await this.updateStage(deploymentId, 'BUILDING', '[BUILD] Static files extracted', 'success');
 
       // STARTING_CANDIDATE — call the agent to start a real Docker container
-      await this.updateStage(deploymentId, 'STARTING_CANDIDATE', '[RUNTIME] Starting container via agent', 'info');
+      await this.updateStage(
+        deploymentId,
+        'STARTING_CANDIDATE',
+        '[RUNTIME] Starting container via agent',
+        'info',
+      );
 
       const containerName = `cloudlane-svc-${service.id}`;
       const deployHtmlDir = join(deployDir, 'html');
@@ -164,42 +182,75 @@ export class DeploymentsService {
           },
         );
 
-        const containerId = (agentResponse.result as { containerId?: string })?.containerId ?? 'unknown';
-        await this.updateStage(deploymentId, 'STARTING_CANDIDATE', `[RUNTIME] Container ${containerId} started`, 'success');
+        const containerId =
+          (agentResponse.result as { containerId?: string })?.containerId ?? 'unknown';
+        await this.updateStage(
+          deploymentId,
+          'STARTING_CANDIDATE',
+          `[RUNTIME] Container ${containerId} started`,
+          'success',
+        );
       } catch (agentErr) {
         // If agent is not available (e.g., in dev without socket), log but continue
-        this.logger.warn(`Agent call failed: ${(agentErr as Error).message} — continuing with simulated deploy`);
-        await this.updateStage(deploymentId, 'STARTING_CANDIDATE', `[RUNTIME] Container ${containerName} started (simulated — agent not connected)`, 'warning');
+        this.logger.warn(
+          `Agent call failed: ${(agentErr as Error).message} — continuing with simulated deploy`,
+        );
+        await this.updateStage(
+          deploymentId,
+          'STARTING_CANDIDATE',
+          `[RUNTIME] Container ${containerName} started (simulated — agent not connected)`,
+          'warning',
+        );
       }
 
       // HEALTH_CHECKING — wait for container to be running
-      await this.updateStage(deploymentId, 'HEALTH_CHECKING', '[HEALTH] Checking container health', 'info');
+      await this.updateStage(
+        deploymentId,
+        'HEALTH_CHECKING',
+        '[HEALTH] Checking container health',
+        'info',
+      );
       await this.sleep(3000); // give container time to start
 
       try {
-        const inspectResp = await this.agent.send(
-          'release.inspect',
-          workspaceId,
-          deployment.id,
-          { deploymentId: deployment.id },
-        );
-        const healthStatus = (inspectResp.result as { healthStatus?: string })?.healthStatus ?? 'unknown';
+        const inspectResp = await this.agent.send('release.inspect', workspaceId, deployment.id, {
+          deploymentId: deployment.id,
+        });
+        const healthStatus =
+          (inspectResp.result as { healthStatus?: string })?.healthStatus ?? 'unknown';
         const state = (inspectResp.result as { state?: string })?.state ?? 'unknown';
 
         if (state === 'running' && healthStatus !== 'unhealthy') {
-          await this.updateStage(deploymentId, 'HEALTH_CHECKING', `[HEALTH] Container healthy (state=${state})`, 'success');
+          await this.updateStage(
+            deploymentId,
+            'HEALTH_CHECKING',
+            `[HEALTH] Container healthy (state=${state})`,
+            'success',
+          );
         } else {
           throw new Error(`Container not healthy: state=${state}, health=${healthStatus}`);
         }
       } catch (agentErr) {
-        this.logger.warn(`Agent health check failed: ${(agentErr as Error).message} — assuming healthy`);
-        await this.updateStage(deploymentId, 'HEALTH_CHECKING', '[HEALTH] Assuming healthy (agent not connected)', 'warning');
+        this.logger.warn(
+          `Agent health check failed: ${(agentErr as Error).message} — assuming healthy`,
+        );
+        await this.updateStage(
+          deploymentId,
+          'HEALTH_CHECKING',
+          '[HEALTH] Assuming healthy (agent not connected)',
+          'warning',
+        );
       }
 
       // ACTIVATING
       await this.updateStage(deploymentId, 'ACTIVATING', '[ROUTE] Configuring Caddy route', 'info');
       // In production, the agent generates and reloads the Caddy config
-      await this.updateStage(deploymentId, 'ACTIVATING', '[ROUTE] Caddy route activated', 'success');
+      await this.updateStage(
+        deploymentId,
+        'ACTIVATING',
+        '[ROUTE] Caddy route activated',
+        'success',
+      );
 
       // LIVE
       await this.prisma.deployment.update({
@@ -222,7 +273,12 @@ export class DeploymentsService {
         },
       });
 
-      await this.addEvent(deploymentId, 'LIVE', `[READY] Deployment is live at /services/${service.id}`, 'success');
+      await this.addEvent(
+        deploymentId,
+        'LIVE',
+        `[READY] Deployment is live at /services/${service.id}`,
+        'success',
+      );
 
       await this.audit.record('DEPLOYMENT_LIVE', 'success', {
         actorType: 'system',
@@ -257,24 +313,34 @@ export class DeploymentsService {
     }
   }
 
-  private async updateStage(deploymentId: string, stage: string, message: string, level: 'info' | 'success' | 'warning' | 'error'): Promise<void> {
-    const stageIndex = STAGES.indexOf(stage as typeof STAGES[number]);
+  private async updateStage(
+    deploymentId: string,
+    stage: string,
+    message: string,
+    level: 'info' | 'success' | 'warning' | 'error',
+  ): Promise<void> {
+    const stageIndex = STAGES.indexOf(stage as (typeof STAGES)[number]);
     await this.prisma.deployment.update({
       where: { id: deploymentId },
       data: {
-        status: stage as typeof STAGES[number],
+        status: stage as (typeof STAGES)[number],
         stage: stageIndex >= 0 ? stageIndex : 0,
       },
     });
     await this.addEvent(deploymentId, stage, message, level);
   }
 
-  private async addEvent(deploymentId: string, stage: string, message: string, level: 'info' | 'success' | 'warning' | 'error'): Promise<void> {
+  private async addEvent(
+    deploymentId: string,
+    stage: string,
+    message: string,
+    level: 'info' | 'success' | 'warning' | 'error',
+  ): Promise<void> {
     await this.prisma.deploymentEvent.create({
       data: {
         id: uuidv4(),
         deploymentId,
-        stage: stage as typeof STAGES[number],
+        stage: stage as (typeof STAGES)[number],
         level,
         message,
       },
@@ -318,7 +384,11 @@ with zipfile.ZipFile('/source.zip') as z:
   /**
    * Rollback to a previous deployment.
    */
-  async rollback(userId: string, serviceId: string, deploymentId: string): Promise<{ operationId: string }> {
+  async rollback(
+    userId: string,
+    serviceId: string,
+    deploymentId: string,
+  ): Promise<{ operationId: string }> {
     const service = await this.prisma.service.findUnique({
       where: { id: serviceId },
       include: { project: { include: { workspace: true } } },
@@ -331,10 +401,16 @@ with zipfile.ZipFile('/source.zip') as z:
       where: { id: deploymentId },
     });
     if (!deployment || deployment.serviceId !== serviceId) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Deployment not found for this service.' });
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Deployment not found for this service.',
+      });
     }
     if (deployment.status !== 'LIVE') {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Can only rollback to a LIVE deployment.' });
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Can only rollback to a LIVE deployment.',
+      });
     }
 
     // Reactivate the previous deployment

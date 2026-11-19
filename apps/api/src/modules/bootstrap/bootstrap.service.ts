@@ -13,17 +13,17 @@ class TooManyRequestsException extends HttpException {
     super(body, HttpStatus.TOO_MANY_REQUESTS);
   }
 }
-import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../common/prisma.service.js';
-import { AuditService } from '../audit/audit.service.js';
-import { SecretsService } from '../secrets/secrets.service.js';
-import { PasswordService } from '../auth/password.service.js';
-import { MfaService } from '../auth/mfa.service.js';
-import { SessionService } from '../auth/session.service.js';
-import { addMinutes, isExpired } from '../auth/time-utils.js';
-import { randomBytes, createHash } from 'node:crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { createHash, randomBytes } from 'node:crypto';
+import type { ConfigService } from '@nestjs/config';
 import { authenticator } from 'otplib';
+import { v4 as uuidv4 } from 'uuid';
+import type { PrismaService } from '../../common/prisma.service.js';
+import type { AuditService } from '../audit/audit.service.js';
+import type { MfaService } from '../auth/mfa.service.js';
+import type { PasswordService } from '../auth/password.service.js';
+import type { SessionService } from '../auth/session.service.js';
+import { addMinutes, isExpired } from '../auth/time-utils.js';
+import type { SecretsService } from '../secrets/secrets.service.js';
 
 interface PendingClaim {
   token: string;
@@ -101,16 +101,25 @@ export class BootstrapService {
         ipAddress: ip,
         metadata: { reason: 'unknown_code' },
       });
-      throw new UnauthorizedException({ code: 'CLAIM_INVALID', message: 'Claim code not recognized.' });
+      throw new UnauthorizedException({
+        code: 'CLAIM_INVALID',
+        message: 'Claim code not recognized.',
+      });
     }
 
     if (claim.status === 'CLAIM_CONSUMED') {
-      throw new ConflictException({ code: 'CLAIM_CONSUMED', message: 'This claim code has already been used.' });
+      throw new ConflictException({
+        code: 'CLAIM_CONSUMED',
+        message: 'This claim code has already been used.',
+      });
     }
 
     if (claim.status === 'CLAIM_EXPIRED' || isExpired(claim.expiresAt)) {
       await this.markExpired(claim.id);
-      throw new UnauthorizedException({ code: 'CLAIM_EXPIRED', message: 'Claim code expired. Generate a new one via the installer.' });
+      throw new UnauthorizedException({
+        code: 'CLAIM_EXPIRED',
+        message: 'Claim code expired. Generate a new one via the installer.',
+      });
     }
 
     if (claim.attemptCount >= claim.maxAttempts) {
@@ -120,7 +129,10 @@ export class BootstrapService {
         ipAddress: ip,
         metadata: { reason: 'max_attempts' },
       });
-      throw new TooManyRequestsException({ code: 'CLAIM_MAX_ATTEMPTS', message: 'Too many attempts. Claim expired.' });
+      throw new TooManyRequestsException({
+        code: 'CLAIM_MAX_ATTEMPTS',
+        message: 'Too many attempts. Claim expired.',
+      });
     }
 
     await this.prisma.installationClaim.update({
@@ -154,23 +166,36 @@ export class BootstrapService {
    *   - Mark claim as CONSUMED
    *   - Return recovery codes (shown once) and MFA enrollment secret
    */
-  async createOwner(input: OwnerCreationInput, claimToken: string, ip: string | null): Promise<OwnerCreationResult> {
+  async createOwner(
+    input: OwnerCreationInput,
+    claimToken: string,
+    ip: string | null,
+  ): Promise<OwnerCreationResult> {
     const pending = pendingClaims.get(claimToken);
     if (!pending || isExpired(pending.expiresAt)) {
       pendingClaims.delete(claimToken);
-      throw new UnauthorizedException({ code: 'CLAIM_TOKEN_INVALID', message: 'Claim session expired. Restart the claim flow.' });
+      throw new UnauthorizedException({
+        code: 'CLAIM_TOKEN_INVALID',
+        message: 'Claim session expired. Restart the claim flow.',
+      });
     }
 
     const existingOwner = await this.prisma.user.findFirst({ where: { role: 'OWNER' } });
     if (existingOwner) {
       pendingClaims.delete(claimToken);
-      throw new ConflictException({ code: 'OWNER_EXISTS', message: 'This installation already has an owner.' });
+      throw new ConflictException({
+        code: 'OWNER_EXISTS',
+        message: 'This installation already has an owner.',
+      });
     }
 
     this.validateEmail(input.email);
     this.validatePassword(input.password);
     if (!input.workspaceName || input.workspaceName.length < 2 || input.workspaceName.length > 64) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Workspace name must be 2-64 characters.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Workspace name must be 2-64 characters.',
+      });
     }
 
     const mfaSecret = this.mfa.generateSecret();
@@ -196,11 +221,13 @@ export class BootstrapService {
             },
           },
           mfaFactors: {
-            create: [{
-              id: factorId,
-              type: 'TOTP',
-              encryptedSecret: this.secrets.encrypt(mfaSecret),
-            }],
+            create: [
+              {
+                id: factorId,
+                type: 'TOTP',
+                encryptedSecret: this.secrets.encrypt(mfaSecret),
+              },
+            ],
           },
           recoveryCodes: {
             createMany: {
@@ -263,10 +290,16 @@ export class BootstrapService {
   ): Promise<{ cookieValue: string; sessionId: string; csrfToken: string; userId: string }> {
     const factor = await this.prisma.mfaFactor.findUnique({ where: { id: factorId } });
     if (!factor) {
-      throw new BadRequestException({ code: 'MFA_FACTOR_NOT_FOUND', message: 'MFA factor not found.' });
+      throw new BadRequestException({
+        code: 'MFA_FACTOR_NOT_FOUND',
+        message: 'MFA factor not found.',
+      });
     }
     if (factor.verifiedAt) {
-      throw new BadRequestException({ code: 'MFA_ALREADY_VERIFIED', message: 'MFA factor is already verified.' });
+      throw new BadRequestException({
+        code: 'MFA_ALREADY_VERIFIED',
+        message: 'MFA factor is already verified.',
+      });
     }
 
     const secret = this.secrets.decrypt(factor.encryptedSecret);
@@ -311,13 +344,19 @@ export class BootstrapService {
 
   private validateEmail(email: string): void {
     if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Invalid email address.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid email address.',
+      });
     }
   }
 
   private validatePassword(password: string): void {
     if (password.length < 12) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Password must be at least 12 characters.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Password must be at least 12 characters.',
+      });
     }
     if (password.length > 1024) {
       throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Password too long.' });
@@ -337,9 +376,11 @@ export class BootstrapService {
   }
 
   private async markExpired(claimId: string): Promise<void> {
-    await this.prisma.installationClaim.update({
-      where: { id: claimId },
-      data: { status: 'CLAIM_EXPIRED' },
-    }).catch(() => {});
+    await this.prisma.installationClaim
+      .update({
+        where: { id: claimId },
+        data: { status: 'CLAIM_EXPIRED' },
+      })
+      .catch(() => {});
   }
 }

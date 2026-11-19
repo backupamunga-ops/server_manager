@@ -1,50 +1,50 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { api } from '$lib/api/client';
-  import { session } from '$lib/stores/session';
-  import type { ProjectSummary } from '@cloudlane/contracts';
+import { api } from '$lib/api/client';
+import { session } from '$lib/stores/session';
+import type { ProjectSummary } from '@cloudlane/contracts';
+import { onMount } from 'svelte';
 
-  let projects: ProjectSummary[] = [];
-  let loading = true;
-  let error: string | null = null;
-  let showCreate = false;
-  let newName = '';
+let projects: ProjectSummary[] = [];
+let loading = true;
+let error: string | null = null;
+let showCreate = false;
+let newName = '';
 
-  onMount(async () => {
+onMount(async () => {
+  await loadProjects();
+});
+
+async function loadProjects() {
+  loading = true;
+  try {
+    const result = await api.projects.list();
+    projects = result.items;
+  } catch (e) {
+    error = (e as { error?: { message?: string } }).error?.message ?? 'Failed to load projects';
+  } finally {
+    loading = false;
+  }
+}
+
+async function createProject() {
+  if (!newName) return;
+  try {
+    await api.projects.create(newName);
+    newName = '';
+    showCreate = false;
     await loadProjects();
-  });
-
-  async function loadProjects() {
-    loading = true;
-    try {
-      const result = await api.projects.list();
-      projects = result.items;
-    } catch (e) {
-      error = (e as { error?: { message?: string } }).error?.message ?? 'Failed to load projects';
-    } finally {
-      loading = false;
-    }
+  } catch (e) {
+    error = (e as { error?: { message?: string } }).error?.message ?? 'Failed to create project';
   }
+}
 
-  async function createProject() {
-    if (!newName) return;
-    try {
-      await api.projects.create(newName);
-      newName = '';
-      showCreate = false;
-      await loadProjects();
-    } catch (e) {
-      error = (e as { error?: { message?: string } }).error?.message ?? 'Failed to create project';
-    }
-  }
+async function logout() {
+  await api.auth.logout();
+  session.set(null);
+  window.location.href = '/login';
+}
 
-  async function logout() {
-    await api.auth.logout();
-    session.set(null);
-    window.location.href = '/login';
-  }
-
-  $: user = $session;
+$: user = $session;
 </script>
 
 <div class="dashboard">

@@ -1,13 +1,23 @@
-import { Body, Controller, Get, Param, Post, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { ServicesService } from './services.service.js';
-import { SessionGuard } from '../../common/guards/session.guard.js';
-import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { SessionInfo } from '@cloudlane/contracts';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsNumber, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { SessionGuard } from '../../common/guards/session.guard.js';
+import type { ServicesService } from './services.service.js';
 
 class CreateZipServiceDto {
-  @IsString() @Matches(/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/)
+  @IsString()
+  @Matches(/^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/)
   name!: string;
 
   @IsEnum(['web', 'api', 'worker', 'static'])

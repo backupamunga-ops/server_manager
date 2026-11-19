@@ -1,13 +1,13 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma.service.js';
-import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException } from '@nestjs/common';
-import { AuditService } from '../audit/audit.service.js';
-import { PasswordService } from './password.service.js';
-import { MfaService } from './mfa.service.js';
-import { SessionService } from './session.service.js';
-import { authenticator } from 'otplib';
 import { randomBytes } from 'node:crypto';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import { authenticator } from 'otplib';
+import type { PrismaService } from '../../common/prisma.service.js';
+import type { AuditService } from '../audit/audit.service.js';
+import type { MfaService } from './mfa.service.js';
+import type { PasswordService } from './password.service.js';
+import type { SessionService } from './session.service.js';
 import { addMinutes } from './time-utils.js';
 
 class TooManyRequestsException extends HttpException {
@@ -45,15 +45,21 @@ export class AuthService {
    * Step 1 of login: verify password, return MFA challenge.
    * Same error for missing user and bad password (enumeration resistance).
    */
-  async login(email: string, password: string, ip: string | null): Promise<{ requiresMfa: true; mfaChallengeId: string }> {
+  async login(
+    email: string,
+    password: string,
+    ip: string | null,
+  ): Promise<{ requiresMfa: true; mfaChallengeId: string }> {
     this.checkRateLimit(ip, 'login');
 
     const user = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() }, include: { password: true },
+      where: { email: email.toLowerCase() },
+      include: { password: true },
     });
 
     // Constant-ish-time: even if user not found, do a dummy hash verify
-    const dummyHash = '$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const dummyHash =
+      '$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     const passwordOk = user?.password
       ? await this.passwords.verify(user.password.argon2Hash, password)
       : await this.passwords.verify(dummyHash, password);
@@ -66,7 +72,10 @@ export class AuthService {
         resourceId: user?.id ?? null,
         metadata: { reason: user ? 'bad_password' : 'unknown_email' },
       });
-      throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' });
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid email or password.',
+      });
     }
 
     // Issue MFA challenge
@@ -82,23 +91,36 @@ export class AuthService {
   }
 
   /** Step 2 of login: verify MFA code, issue session. */
-  async verifyMfa(challengeId: string, code: string, ip: string | null, userAgent: string | null): Promise<{ cookieValue: string; sessionId: string; csrfToken: string; userId: string }> {
+  async verifyMfa(
+    challengeId: string,
+    code: string,
+    ip: string | null,
+    userAgent: string | null,
+  ): Promise<{ cookieValue: string; sessionId: string; csrfToken: string; userId: string }> {
     const pending = pendingLogins.get(challengeId);
     if (!pending || pending.expiresAt < new Date()) {
       pendingLogins.delete(challengeId);
-      throw new UnauthorizedException({ code: 'MFA_CHALLENGE_EXPIRED', message: 'MFA challenge expired. Restart login.' });
+      throw new UnauthorizedException({
+        code: 'MFA_CHALLENGE_EXPIRED',
+        message: 'MFA challenge expired. Restart login.',
+      });
     }
 
     pending.attemptCount++;
     if (pending.attemptCount > 5) {
       pendingLogins.delete(challengeId);
-      throw new TooManyRequestsException({ code: 'MFA_MAX_ATTEMPTS', message: 'Too many MFA attempts.' });
+      throw new TooManyRequestsException({
+        code: 'MFA_MAX_ATTEMPTS',
+        message: 'Too many MFA attempts.',
+      });
     }
 
     // Try TOTP first
     const codeValid = await this.mfa.verify(pending.userId, code);
     // Then recovery code
-    const recoveryValid = codeValid ? false : await this.mfa.verifyRecoveryCode(pending.userId, code);
+    const recoveryValid = codeValid
+      ? false
+      : await this.mfa.verifyRecoveryCode(pending.userId, code);
 
     if (!codeValid && !recoveryValid) {
       await this.audit.record('MFA_VERIFIED', 'denied', {
@@ -151,13 +173,21 @@ export class AuthService {
     });
   }
 
-  async reauthenticateWithPassword(userId: string, password: string, ip: string | null, sessionId: string): Promise<Date> {
+  async reauthenticateWithPassword(
+    userId: string,
+    password: string,
+    ip: string | null,
+    sessionId: string,
+  ): Promise<Date> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { password: true },
     });
     if (!user?.password) {
-      throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid credentials.' });
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid credentials.',
+      });
     }
     const ok = await this.passwords.verify(user.password.argon2Hash, password);
     if (!ok) {
@@ -167,13 +197,21 @@ export class AuthService {
         ipAddress: ip,
         metadata: { reason: 'reauth_bad_password' },
       });
-      throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid credentials.' });
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid credentials.',
+      });
     }
     const expiresAt = await this.sessions.grantStepUp(sessionId);
     return expiresAt;
   }
 
-  async reauthenticateWithMfa(userId: string, code: string, ip: string | null, sessionId: string): Promise<Date> {
+  async reauthenticateWithMfa(
+    userId: string,
+    code: string,
+    ip: string | null,
+    sessionId: string,
+  ): Promise<Date> {
     const ok = await this.mfa.verify(userId, code);
     if (!ok) {
       await this.audit.record('MFA_VERIFIED', 'denied', {

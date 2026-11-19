@@ -1,7 +1,13 @@
-import { Catch, ArgumentsHost, ExceptionFilter, Logger, HttpStatus } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import {
+  type ArgumentsHost,
+  Catch,
+  type ExceptionFilter,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { Request, Response } from 'express';
-import { randomUUID } from 'node:crypto';
 
 export interface ApiErrorBody {
   error: {

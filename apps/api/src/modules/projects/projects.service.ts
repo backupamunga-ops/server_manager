@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma.service.js';
-import { AuditService } from '../audit/audit.service.js';
 import { v4 as uuidv4 } from 'uuid';
+import type { PrismaService } from '../../common/prisma.service.js';
+import type { AuditService } from '../audit/audit.service.js';
 
 const slugPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
@@ -87,11 +87,17 @@ export class ProjectsService {
 
   async create(ownerId: string, name: string, slugInput?: string) {
     if (!name || name.length < 2 || name.length > 64) {
-      throw new ConflictException({ code: 'VALIDATION_ERROR', message: 'Project name must be 2-64 characters.' });
+      throw new ConflictException({
+        code: 'VALIDATION_ERROR',
+        message: 'Project name must be 2-64 characters.',
+      });
     }
-    const slug = (slugInput ? slugInput.toLowerCase() : slugify(name));
+    const slug = slugInput ? slugInput.toLowerCase() : slugify(name);
     if (!slugPattern.test(slug)) {
-      throw new ConflictException({ code: 'VALIDATION_ERROR', message: 'Slug must be 1-63 chars, alphanumeric + hyphens.' });
+      throw new ConflictException({
+        code: 'VALIDATION_ERROR',
+        message: 'Slug must be 1-63 chars, alphanumeric + hyphens.',
+      });
     }
 
     const workspace = await this.getOrCreateWorkspace(ownerId);
@@ -100,7 +106,10 @@ export class ProjectsService {
       where: { workspaceId_slug: { workspaceId: workspace.id, slug } },
     });
     if (existing) {
-      throw new ConflictException({ code: 'CONFLICT', message: `Project with slug "${slug}" already exists.` });
+      throw new ConflictException({
+        code: 'CONFLICT',
+        message: `Project with slug "${slug}" already exists.`,
+      });
     }
 
     const projectId = uuidv4();

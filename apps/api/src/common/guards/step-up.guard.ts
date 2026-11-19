@@ -1,16 +1,16 @@
 import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
+  type CanActivate,
+  type ExecutionContext,
   ForbiddenException,
+  Injectable,
 } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import type { Reflector } from '@nestjs/core';
 import type { AuthenticatedRequest } from './session.guard.js';
 
 export const STEP_UP_KEY = 'requiresStepUp';
 
 export const RequireStepUp = (): MethodDecorator =>
-  (Reflect.metadata(STEP_UP_KEY, true) as unknown) as MethodDecorator;
+  Reflect.metadata(STEP_UP_KEY, true) as unknown as MethodDecorator;
 
 @Injectable()
 export class StepUpGuard implements CanActivate {
@@ -27,7 +27,7 @@ export class StepUpGuard implements CanActivate {
     if (!req.user) return false;
 
     const now = Date.now();
-    const expiresAt = req.user.stepUpExpiresAt ? Date.parse(req.user.stepUpExpiresAt) : NaN;
+    const expiresAt = req.user.stepUpExpiresAt ? Date.parse(req.user.stepUpExpiresAt) : Number.NaN;
     if (!expiresAt || expiresAt < now) {
       throw new ForbiddenException({
         code: 'STEP_UP_REQUIRED',

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
 import { AGENT_PROTOCOL_VERSION } from '@cloudlane/contracts';
+import { describe, expect, it } from 'vitest';
 
 describe('api sanity', () => {
   it('agent protocol version is 1', () => {

@@ -1,9 +1,18 @@
-import { Body, Controller, Headers, HttpCode, Post, Req, UsePipes, ValidationPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  Post,
+  Req,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { IsEnum, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import type { Request } from 'express';
-import { BootstrapService } from './bootstrap.service.js';
 import { Public } from '../../common/decorators/public.decorator.js';
-import { IsEnum, IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import type { BootstrapService } from './bootstrap.service.js';
 
 class ClaimDto {
   @IsString()
@@ -54,7 +63,10 @@ export class BootstrapController {
   @Post('claim')
   @HttpCode(200)
   @UsePipes(new ValidationPipe({ transform: true }))
-  async claim(@Body() body: ClaimDto, @Req() req: Request): Promise<{ token: string; expiresAt: string }> {
+  async claim(
+    @Body() body: ClaimDto,
+    @Req() req: Request,
+  ): Promise<{ token: string; expiresAt: string }> {
     const result = await this.bootstrap.verifyClaim(body.claimCode, getIp(req));
     return { token: result.token, expiresAt: result.expiresAt.toISOString() };
   }
@@ -75,7 +87,12 @@ export class BootstrapController {
       });
     }
     const result = await this.bootstrap.createOwner(
-      { email: body.email, password: body.password, workspaceName: body.workspaceName, mfaType: body.mfaType },
+      {
+        email: body.email,
+        password: body.password,
+        workspaceName: body.workspaceName,
+        mfaType: body.mfaType,
+      },
       claimToken,
       getIp(req),
     );
@@ -87,7 +104,12 @@ export class BootstrapController {
   @HttpCode(200)
   @UsePipes(new ValidationPipe({ transform: true }))
   async verifyMfa(@Body() body: MfaVerifyDto, @Req() req: Request) {
-    const result = await this.bootstrap.verifyFirstMfa(body.factorId, body.code, getIp(req), req.headers['user-agent'] ?? null);
+    const result = await this.bootstrap.verifyFirstMfa(
+      body.factorId,
+      body.code,
+      getIp(req),
+      req.headers['user-agent'] ?? null,
+    );
     // Set the session cookie
     const res = (req as Request & { res?: import('express').Response }).res;
     if (res) {

@@ -1,16 +1,31 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { ProjectsService } from './projects.service.js';
-import { SessionGuard } from '../../common/guards/session.guard.js';
-import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { SessionInfo } from '@cloudlane/contracts';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { SessionGuard } from '../../common/guards/session.guard.js';
+import type { ProjectsService } from './projects.service.js';
 
 class CreateProjectDto {
-  @IsString() @MinLength(2) @MaxLength(64)
+  @IsString()
+  @MinLength(2)
+  @MaxLength(64)
   name!: string;
 
-  @IsOptional() @IsString() @MaxLength(63)
+  @IsOptional()
+  @IsString()
+  @MaxLength(63)
   slug?: string;
 }
 

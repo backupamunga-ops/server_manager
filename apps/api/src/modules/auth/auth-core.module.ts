@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
-import { PasswordService } from './password.service.js';
 import { MfaService } from './mfa.service.js';
+import { PasswordService } from './password.service.js';
 import { SessionService } from './session.service.js';
 
 /**

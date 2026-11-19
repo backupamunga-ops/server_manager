@@ -1,42 +1,50 @@
 <script lang="ts">
-  import { api } from '$lib/api/client';
-  import { onMount } from 'svelte';
+import { api } from '$lib/api/client';
+import { onMount } from 'svelte';
 
-  let email = '';
-  let password = '';
-  let mfaCode = '';
-  let mfaChallengeId = '';
-  let step: 'credentials' | 'mfa' = 'credentials';
-  let error: string | null = null;
-  let loading = false;
+const email = '';
+const password = '';
+const mfaCode = '';
+let mfaChallengeId = '';
+let step: 'credentials' | 'mfa' = 'credentials';
+let error: string | null = null;
+let loading = false;
 
-  onMount(async () => {
-    try {
-      const sess = await api.auth.session();
-      if (sess) window.location.href = '/';
-    } catch { /* not logged in */ }
-  });
-
-  async function submitLogin() {
-    loading = true; error = null;
-    try {
-      const result = await api.auth.login(email, password);
-      mfaChallengeId = result.mfaChallengeId;
-      step = 'mfa';
-    } catch (e) {
-      error = (e as { error?: { message?: string } }).error?.message ?? 'Login failed';
-    } finally { loading = false; }
+onMount(async () => {
+  try {
+    const sess = await api.auth.session();
+    if (sess) window.location.href = '/';
+  } catch {
+    /* not logged in */
   }
+});
 
-  async function submitMfa() {
-    loading = true; error = null;
-    try {
-      await api.auth.verifyMfa(mfaChallengeId, mfaCode);
-      window.location.href = '/';
-    } catch (e) {
-      error = (e as { error?: { message?: string } }).error?.message ?? 'MFA verification failed';
-    } finally { loading = false; }
+async function submitLogin() {
+  loading = true;
+  error = null;
+  try {
+    const result = await api.auth.login(email, password);
+    mfaChallengeId = result.mfaChallengeId;
+    step = 'mfa';
+  } catch (e) {
+    error = (e as { error?: { message?: string } }).error?.message ?? 'Login failed';
+  } finally {
+    loading = false;
   }
+}
+
+async function submitMfa() {
+  loading = true;
+  error = null;
+  try {
+    await api.auth.verifyMfa(mfaChallengeId, mfaCode);
+    window.location.href = '/';
+  } catch (e) {
+    error = (e as { error?: { message?: string } }).error?.message ?? 'MFA verification failed';
+  } finally {
+    loading = false;
+  }
+}
 </script>
 
 <div class="login-container">

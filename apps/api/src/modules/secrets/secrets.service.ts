@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { Injectable } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 
 const ALGO = 'aes-256-gcm';
 const IV_LEN = 12;
@@ -25,13 +25,13 @@ export class SecretsService {
   constructor(config: ConfigService) {
     const hex = config.get<string>('MASTER_KEY');
     if (!hex) {
-      throw new Error(
-        'MASTER_KEY env var is required. Generate with: openssl rand -hex 32',
-      );
+      throw new Error('MASTER_KEY env var is required. Generate with: openssl rand -hex 32');
     }
     const key = Buffer.from(hex, 'hex');
     if (key.length !== KEY_LEN) {
-      throw new Error(`MASTER_KEY must be ${KEY_LEN} bytes (64 hex chars). Got ${key.length} bytes.`);
+      throw new Error(
+        `MASTER_KEY must be ${KEY_LEN} bytes (64 hex chars). Got ${key.length} bytes.`,
+      );
     }
     this.key = key;
   }

@@ -1,10 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { Body, Controller, Get, Headers, Post, Query, Req } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
-import { randomUUID } from 'node:crypto';
-import { GithubService } from './github.service.js';
 import { Public } from '../../common/decorators/public.decorator.js';
-import { ConfigService } from '@nestjs/config';
+import type { GithubService } from './github.service.js';
 
 @ApiTags('github')
 @Controller('github')

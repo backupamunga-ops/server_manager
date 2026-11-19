@@ -1,10 +1,20 @@
-import { Body, Controller, Param, Post, Put, Req, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Param,
+  Post,
+  Put,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import type { Request } from 'express';
-import { UploadsService } from './uploads.service.js';
-import { SessionGuard } from '../../common/guards/session.guard.js';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsNumber, IsString, Max, Min } from 'class-validator';
+import type { Request } from 'express';
+import { SessionGuard } from '../../common/guards/session.guard.js';
+import type { UploadsService } from './uploads.service.js';
 
 class UploadInitDto {
   @IsString() filename!: string;

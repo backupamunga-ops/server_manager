@@ -1,12 +1,12 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../common/prisma.service.js';
-import { randomUUID, createHash } from 'node:crypto';
-import { readdir, readFile, stat, unlink, mkdir } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { createWriteStream } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import type { PrismaService } from '../../common/prisma.service.js';
 
 const MAX_ZIP_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_EXTRACTED_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -43,7 +43,11 @@ export class UploadsService {
    * In production with Garage running, this would return a presigned S3 URL.
    * For now, the dashboard uploads directly to the API which stages the file.
    */
-  async init(filename: string, size: number, mimeType: string): Promise<{ uploadId: string; uploadUrl: string; expiresAt: string }> {
+  async init(
+    filename: string,
+    size: number,
+    mimeType: string,
+  ): Promise<{ uploadId: string; uploadUrl: string; expiresAt: string }> {
     if (size > MAX_ZIP_SIZE) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
@@ -88,7 +92,10 @@ export class UploadsService {
   async receive(uploadId: string, data: Buffer, declaredSha256: string): Promise<void> {
     const pending = pendingUploads.get(uploadId);
     if (!pending) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Upload session not found or expired.' });
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Upload session not found or expired.',
+      });
     }
 
     const actualSha256 = createHash('sha256').update(data).digest('hex');
@@ -102,25 +109,32 @@ export class UploadsService {
 
     const stagedPath = join(UPLOAD_DIR, `${uploadId}.zip`);
     await mkdir(UPLOAD_DIR, { recursive: true });
-    await pipeline(
-      async function* () { yield data; },
-      createWriteStream(stagedPath),
-    );
+    await pipeline(async function* () {
+      yield data;
+    }, createWriteStream(stagedPath));
 
     pending.sha256 = actualSha256;
     pending.stagedPath = stagedPath;
     pending.size = data.length;
 
-    this.logger.log(`Upload ${uploadId} received: ${data.length} bytes, sha256=${actualSha256.slice(0, 16)}...`);
+    this.logger.log(
+      `Upload ${uploadId} received: ${data.length} bytes, sha256=${actualSha256.slice(0, 16)}...`,
+    );
   }
 
   /**
    * Finalize an upload: validate the ZIP, detect framework, return result.
    */
-  async finalize(uploadId: string, sha256: string): Promise<{ uploadId: string; validated: true; detectedFramework: string; entryCount: number }> {
+  async finalize(
+    uploadId: string,
+    sha256: string,
+  ): Promise<{ uploadId: string; validated: true; detectedFramework: string; entryCount: number }> {
     const pending = pendingUploads.get(uploadId);
     if (!pending || !pending.stagedPath) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Upload not found or not yet received.' });
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Upload not found or not yet received.',
+      });
     }
 
     // Verify SHA256
@@ -133,7 +147,9 @@ export class UploadsService {
 
     // Validate the ZIP file
     const validation = await this.validateZip(pending.stagedPath);
-    this.logger.log(`Upload ${uploadId} validated: ${validation.entryCount} entries, framework=${validation.detectedFramework}`);
+    this.logger.log(
+      `Upload ${uploadId} validated: ${validation.entryCount} entries, framework=${validation.detectedFramework}`,
+    );
 
     // Update pending upload with validation results
     pending.entryCount = validation.entryCount;
@@ -177,14 +193,19 @@ export class UploadsService {
    * - Entry count limit
    * - Framework detection
    */
-  private async validateZip(filePath: string): Promise<{ entryCount: number; detectedFramework: string }> {
+  private async validateZip(
+    filePath: string,
+  ): Promise<{ entryCount: number; detectedFramework: string }> {
     const data = await readFile(filePath);
     const stats = await stat(filePath);
 
     // Parse ZIP central directory
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     if (view.byteLength < 22) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'File too small to be a valid ZIP.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'File too small to be a valid ZIP.',
+      });
     }
 
     // Find End of Central Directory record
@@ -196,7 +217,10 @@ export class UploadsService {
       }
     }
     if (eocd < 0) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Invalid ZIP: no end of central directory.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid ZIP: no end of central directory.',
+      });
     }
 
     const entryCount = view.getUint16(eocd + 10, true);
@@ -213,7 +237,10 @@ export class UploadsService {
 
     for (let i = 0; i < entryCount; i++) {
       if (offset + 46 > view.byteLength || view.getUint32(offset, true) !== 0x02014b50) {
-        throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'ZIP central directory is corrupted.' });
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'ZIP central directory is corrupted.',
+        });
       }
       const nameLen = view.getUint16(offset + 28, true);
       const extraLen = view.getUint16(offset + 30, true);
@@ -222,7 +249,10 @@ export class UploadsService {
       const uncompressedSize = view.getUint32(offset + 24, true);
 
       if (offset + 46 + nameLen > view.byteLength) {
-        throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'ZIP entry name is corrupted.' });
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'ZIP entry name is corrupted.',
+        });
       }
 
       const name = Buffer.from(data.subarray(offset + 46, offset + 46 + nameLen)).toString('utf8');

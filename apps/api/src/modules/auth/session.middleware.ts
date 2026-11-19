@@ -1,7 +1,7 @@
-import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
-import type { Request, Response, NextFunction } from 'express';
 import type { SessionInfo } from '@cloudlane/contracts';
-import { PrismaService } from '../../common/prisma.service.js';
+import { Injectable, type NestMiddleware, UnauthorizedException } from '@nestjs/common';
+import type { NextFunction, Request, Response } from 'express';
+import type { PrismaService } from '../../common/prisma.service.js';
 
 interface RequestWithSession extends Request {
   user?: SessionInfo;
@@ -29,7 +29,7 @@ export class SessionMiddleware implements NestMiddleware {
           handleBuf = Buffer.alloc(0);
         }
         if (handleBuf.length === 32) {
-          const crypto = require('crypto');
+          const crypto = require('node:crypto');
           const handleHash = crypto.createHash('sha256').update(handleBuf).digest('hex');
           const session = await this.prisma.session.findFirst({
             where: { id: sessionId, handleHash, revokedAt: null, expiresAt: { gt: new Date() } },
@@ -41,7 +41,10 @@ export class SessionMiddleware implements NestMiddleware {
             });
             if (user?.isActive) {
               const stepUpExpiresAt = session.stepUpExpiresAt;
-              const requiresStepUp = session.requiresStepUp && stepUpExpiresAt !== null && stepUpExpiresAt.getTime() > Date.now();
+              const requiresStepUp =
+                session.requiresStepUp &&
+                stepUpExpiresAt !== null &&
+                stepUpExpiresAt.getTime() > Date.now();
               req.user = {
                 userId: session.userId,
                 email: user.email,
@@ -60,7 +63,7 @@ export class SessionMiddleware implements NestMiddleware {
 
     // CSRF check DISABLED for HTTP dev mode
     // Will re-enable when HTTPS is configured
-    
+
     next();
   }
 }

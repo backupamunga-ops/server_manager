@@ -1,68 +1,79 @@
 <script lang="ts">
-  import { api } from '$lib/api/client';
-  import { installationStatus } from '$lib/stores/session';
-  import { onMount } from 'svelte';
+import { api } from '$lib/api/client';
+import { installationStatus } from '$lib/stores/session';
+import { onMount } from 'svelte';
 
-  let claimCode = '';
-  let email = '';
-  let password = '';
-  let workspaceName = '';
-  let mfaSecret = '';
-  let mfaCode = '';
-  let otpauthUrl = '';
-  let claimToken = '';
-  let factorId = '';
-  let recoveryCodes: string[] = [];
-  let step: 'claim' | 'owner' | 'mfa' | 'done' = 'claim';
-  let error: string | null = null;
-  let loading = false;
+const claimCode = '';
+const email = '';
+const password = '';
+const workspaceName = '';
+let mfaSecret = '';
+const mfaCode = '';
+let otpauthUrl = '';
+let claimToken = '';
+let factorId = '';
+let recoveryCodes: string[] = [];
+let step: 'claim' | 'owner' | 'mfa' | 'done' = 'claim';
+let error: string | null = null;
+let loading = false;
 
-  onMount(async () => {
-    const status = await api.installation.status();
-    installationStatus.set(status.status);
-    if (status.status !== 'unclaimed') {
-      window.location.href = '/login';
-    }
-  });
-
-  async function submitClaim() {
-    loading = true; error = null;
-    try {
-      const result = await api.bootstrap.claim(claimCode);
-      claimToken = result.token;
-      step = 'owner';
-    } catch (e) {
-      error = (e as { error?: { message?: string } }).error?.message ?? 'Claim failed';
-    } finally { loading = false; }
+onMount(async () => {
+  const status = await api.installation.status();
+  installationStatus.set(status.status);
+  if (status.status !== 'unclaimed') {
+    window.location.href = '/login';
   }
+});
 
-  async function submitOwner() {
-    loading = true; error = null;
-    try {
-      const result = await api.bootstrap.createOwner(
-        { email, password, workspaceName, mfaType: 'totp' },
-        claimToken,
-      );
-      mfaSecret = result.mfaEnrollment.secret;
-      otpauthUrl = result.mfaEnrollment.otpauthUrl;
-      factorId = result.mfaEnrollment.factorId;
-      recoveryCodes = result.recoveryCodes;
-      step = 'mfa';
-    } catch (e) {
-      error = (e as { error?: { message?: string } }).error?.message ?? 'Owner creation failed';
-    } finally { loading = false; }
+async function submitClaim() {
+  loading = true;
+  error = null;
+  try {
+    const result = await api.bootstrap.claim(claimCode);
+    claimToken = result.token;
+    step = 'owner';
+  } catch (e) {
+    error = (e as { error?: { message?: string } }).error?.message ?? 'Claim failed';
+  } finally {
+    loading = false;
   }
+}
 
-  async function submitMfa() {
-    loading = true; error = null;
-    try {
-      await api.bootstrap.verifyMfa(factorId, mfaCode);
-      step = 'done';
-      setTimeout(() => { window.location.href = '/'; }, 2000);
-    } catch (e) {
-      error = (e as { error?: { message?: string } }).error?.message ?? 'MFA verification failed';
-    } finally { loading = false; }
+async function submitOwner() {
+  loading = true;
+  error = null;
+  try {
+    const result = await api.bootstrap.createOwner(
+      { email, password, workspaceName, mfaType: 'totp' },
+      claimToken,
+    );
+    mfaSecret = result.mfaEnrollment.secret;
+    otpauthUrl = result.mfaEnrollment.otpauthUrl;
+    factorId = result.mfaEnrollment.factorId;
+    recoveryCodes = result.recoveryCodes;
+    step = 'mfa';
+  } catch (e) {
+    error = (e as { error?: { message?: string } }).error?.message ?? 'Owner creation failed';
+  } finally {
+    loading = false;
   }
+}
+
+async function submitMfa() {
+  loading = true;
+  error = null;
+  try {
+    await api.bootstrap.verifyMfa(factorId, mfaCode);
+    step = 'done';
+    setTimeout(() => {
+      window.location.href = '/';
+    }, 2000);
+  } catch (e) {
+    error = (e as { error?: { message?: string } }).error?.message ?? 'MFA verification failed';
+  } finally {
+    loading = false;
+  }
+}
 </script>
 
 <div class="setup-container">

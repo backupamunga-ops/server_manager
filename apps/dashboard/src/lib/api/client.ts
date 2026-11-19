@@ -3,13 +3,13 @@
  */
 
 import type {
-  InstallationStatusResponse,
   ClaimResponse,
-  OwnerCreationResponse,
+  InstallationStatusResponse,
   LoginResponse,
-  SessionInfo,
-  ProjectSummary,
+  OwnerCreationResponse,
   ProjectDetail,
+  ProjectSummary,
+  SessionInfo,
 } from '@cloudlane/contracts';
 
 const BASE = '/api/v1';
@@ -37,7 +37,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (newCsrf) setCsrfToken(newCsrf);
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: { code: 'NETWORK_ERROR', message: res.statusText } }));
+    const body = await res
+      .json()
+      .catch(() => ({ error: { code: 'NETWORK_ERROR', message: res.statusText } }));
     throw body;
   }
 
@@ -55,7 +57,10 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ claimCode }),
       }),
-    createOwner: (input: { email: string; password: string; workspaceName: string; mfaType: 'totp' }, claimToken: string) =>
+    createOwner: (
+      input: { email: string; password: string; workspaceName: string; mfaType: 'totp' },
+      claimToken: string,
+    ) =>
       request<OwnerCreationResponse>('/bootstrap/owner', {
         method: 'POST',
         headers: { 'X-Claim-Token': claimToken },

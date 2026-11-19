@@ -14,21 +14,11 @@
     "isolatedModules": false,
     "verbatimModuleSyntax": false,
     "resolveJsonModule": true,
-    "types": [
-      "node",
-      "multer"
-    ],
+    "types": ["node", "multer"],
     "noUncheckedIndexedAccess": false,
     "strict": false,
     "noImplicitAny": false
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "test",
-    "**/*.spec.ts"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
 }

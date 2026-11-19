@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
+import { Injectable } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import argon2 from 'argon2';
 
 /**
  * Password hashing service using Argon2id.

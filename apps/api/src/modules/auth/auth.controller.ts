@@ -1,14 +1,26 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
-import { AuthService } from './auth.service.js';
-import { SessionService } from './session.service.js';
-import { Public } from '../../common/decorators/public.decorator.js';
-import { RequireStepUp, StepUpGuard } from '../../common/guards/step-up.guard.js';
-import { SessionGuard } from '../../common/guards/session.guard.js';
-import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { SessionInfo, SessionListItem } from '@cloudlane/contracts';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import type { Request, Response } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { Public } from '../../common/decorators/public.decorator.js';
+import { SessionGuard } from '../../common/guards/session.guard.js';
+import { RequireStepUp, StepUpGuard } from '../../common/guards/step-up.guard.js';
+import type { AuthService } from './auth.service.js';
+import type { SessionService } from './session.service.js';
 
 class LoginDto {
   @IsEmail()
@@ -77,7 +89,12 @@ export class AuthController {
   @HttpCode(200)
   @UsePipes(new ValidationPipe({ transform: true }))
   async verifyMfa(@Body() body: MfaVerifyDto, @Req() req: RequestWithSession) {
-    const result = await this.auth.verifyMfa(body.mfaChallengeId, body.code, getIp(req), req.headers['user-agent'] ?? null);
+    const result = await this.auth.verifyMfa(
+      body.mfaChallengeId,
+      body.code,
+      getIp(req),
+      req.headers['user-agent'] ?? null,
+    );
     setSessionCookie(req.res as Response | undefined, result.cookieValue);
     if (req.res) req.res.setHeader('X-CSRF-Token', result.csrfToken);
     return { userId: result.userId, sessionId: result.sessionId };
@@ -113,17 +130,33 @@ export class AuthController {
     @CurrentUser() user: SessionInfo,
   ) {
     if (!req.sessionId) {
-      return Promise.reject({ status: 401, response: { code: 'UNAUTHENTICATED', message: 'No session.' } });
+      return Promise.reject({
+        status: 401,
+        response: { code: 'UNAUTHENTICATED', message: 'No session.' },
+      });
     }
     if (body.password) {
-      const expiresAt = await this.auth.reauthenticateWithPassword(user.userId, body.password, getIp(req), req.sessionId);
+      const expiresAt = await this.auth.reauthenticateWithPassword(
+        user.userId,
+        body.password,
+        getIp(req),
+        req.sessionId,
+      );
       return { stepUpExpiresAt: expiresAt.toISOString() };
     }
     if (body.mfaCode) {
-      const expiresAt = await this.auth.reauthenticateWithMfa(user.userId, body.mfaCode, getIp(req), req.sessionId);
+      const expiresAt = await this.auth.reauthenticateWithMfa(
+        user.userId,
+        body.mfaCode,
+        getIp(req),
+        req.sessionId,
+      );
       return { stepUpExpiresAt: expiresAt.toISOString() };
     }
-    return Promise.reject({ status: 400, response: { code: 'VALIDATION_ERROR', message: 'Provide password or mfaCode.' } });
+    return Promise.reject({
+      status: 400,
+      response: { code: 'VALIDATION_ERROR', message: 'Provide password or mfaCode.' },
+    });
   }
 
   @UseGuards(SessionGuard, StepUpGuard)
@@ -139,7 +172,10 @@ export class AuthController {
   @UseGuards(SessionGuard)
   @ApiBearerAuth()
   @Get('sessions')
-  async listSessions(@CurrentUser() user: SessionInfo, @Req() req: RequestWithSession): Promise<SessionListItem[]> {
+  async listSessions(
+    @CurrentUser() user: SessionInfo,
+    @Req() req: RequestWithSession,
+  ): Promise<SessionListItem[]> {
     if (!req.sessionId) return [];
     const sessions = await this.sessions.listForUser(user.userId, req.sessionId);
     return sessions.map((s) => ({

@@ -5,11 +5,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma.service.js';
-import { AuditService } from '../audit/audit.service.js';
-import { DeploymentsService } from '../deployments/deployments.service.js';
-import { UploadsService } from '../uploads/uploads.service.js';
 import { v4 as uuidv4 } from 'uuid';
+import type { PrismaService } from '../../common/prisma.service.js';
+import type { AuditService } from '../audit/audit.service.js';
+import type { DeploymentsService } from '../deployments/deployments.service.js';
+import type { UploadsService } from '../uploads/uploads.service.js';
 
 const serviceNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 
@@ -92,7 +92,10 @@ export class ServicesService {
   ): Promise<{ serviceId: string; deploymentId: string }> {
     // Validate name
     if (!serviceNamePattern.test(name)) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Service name must be 1-49 chars, lowercase alphanumeric + hyphens.' });
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Service name must be 1-49 chars, lowercase alphanumeric + hyphens.',
+      });
     }
 
     // Verify project ownership and get environment
@@ -108,12 +111,18 @@ export class ServicesService {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Project not found.' });
     }
     if (project.services.length > 0) {
-      throw new ConflictException({ code: 'CONFLICT', message: `Service "${name}" already exists in this project.` });
+      throw new ConflictException({
+        code: 'CONFLICT',
+        message: `Service "${name}" already exists in this project.`,
+      });
     }
 
     const env = project.environments.find((e) => e.name === 'production');
     if (!env) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Production environment not found.' });
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Production environment not found.',
+      });
     }
 
     // Get upload info
@@ -127,43 +136,44 @@ export class ServicesService {
     const deploymentId = uuidv4();
 
     // Atomic: create service + zip source + deployment
-    const result: { service: { id: string }; deployment: { id: string } } = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.service.create({
-        data: {
-          id: serviceId,
-          projectId,
-          environmentId: env.id,
-          name,
-          kind: 'application',
-          role,
-          source: 'zip',
-          framework,
-          desiredState: 'deploying',
-          observedState: 'pending',
-          zipSource: {
-            create: {
-              storagePath: uploadPath,
-              sha256: 'placeholder',
-              fileSize: BigInt(0),
-              entryCount,
-              detectedFramework: framework,
+    const result: { service: { id: string }; deployment: { id: string } } =
+      await this.prisma.$transaction(async (tx) => {
+        const created = await tx.service.create({
+          data: {
+            id: serviceId,
+            projectId,
+            environmentId: env.id,
+            name,
+            kind: 'application',
+            role,
+            source: 'zip',
+            framework,
+            desiredState: 'deploying',
+            observedState: 'pending',
+            zipSource: {
+              create: {
+                storagePath: uploadPath,
+                sha256: 'placeholder',
+                fileSize: BigInt(0),
+                entryCount,
+                detectedFramework: framework,
+              },
             },
           },
-        },
-      });
+        });
 
-      const deployment = await tx.deployment.create({
-        data: {
-          id: deploymentId,
-          serviceId: created.id,
-          status: 'REQUESTED',
-          stage: 0,
-          revision: `zip-${Date.now().toString(36)}`,
-        },
-      });
+        const deployment = await tx.deployment.create({
+          data: {
+            id: deploymentId,
+            serviceId: created.id,
+            status: 'REQUESTED',
+            stage: 0,
+            revision: `zip-${Date.now().toString(36)}`,
+          },
+        });
 
-      return { service: created, deployment };
-    });
+        return { service: created, deployment };
+      });
 
     // Queue the deployment for processing
     await this.deployments.queueDeployment(result.deployment.id);
@@ -177,7 +187,6 @@ export class ServicesService {
     });
 
     // Clean up the upload staging
-    
 
     return { serviceId, deploymentId };
   }

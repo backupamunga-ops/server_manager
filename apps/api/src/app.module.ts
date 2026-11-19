@@ -1,21 +1,21 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma.module.js';
+import { HealthController } from './health.controller.js';
+import { AgentModule } from './modules/agent/agent.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
-import { SecretsModule } from './modules/secrets/secrets.module.js';
 import { AuthCoreModule } from './modules/auth/auth-core.module.js';
-import { InstallationModule } from './modules/installation/installation.module.js';
-import { BootstrapModule } from './modules/bootstrap/bootstrap.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { SessionMiddleware } from './modules/auth/session.middleware.js';
-import { ProjectsModule } from './modules/projects/projects.module.js';
-import { ServicesModule } from './modules/services/services.module.js';
+import { BootstrapModule } from './modules/bootstrap/bootstrap.module.js';
 import { DeploymentsModule } from './modules/deployments/deployments.module.js';
-import { UploadsModule } from './modules/uploads/uploads.module.js';
 import { GithubModule } from './modules/github/github.module.js';
-import { AgentModule } from './modules/agent/agent.module.js';
-import { HealthController } from './health.controller.js';
+import { InstallationModule } from './modules/installation/installation.module.js';
+import { ProjectsModule } from './modules/projects/projects.module.js';
+import { SecretsModule } from './modules/secrets/secrets.module.js';
+import { ServicesModule } from './modules/services/services.module.js';
+import { UploadsModule } from './modules/uploads/uploads.module.js';
 
 @Module({
   imports: [

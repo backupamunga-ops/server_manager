@@ -1,35 +1,35 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { page } from '$app/stores';
-  import { api } from '$lib/api/client';
-  import { session, installationStatus } from '$lib/stores/session';
+import { page } from '$app/stores';
+import { api } from '$lib/api/client';
+import { installationStatus, session } from '$lib/stores/session';
+import { onMount } from 'svelte';
 
-  let loading = true;
+let loading = true;
 
-  onMount(async () => {
-    try {
-      const status = await api.installation.status();
-      installationStatus.set(status.status);
+onMount(async () => {
+  try {
+    const status = await api.installation.status();
+    installationStatus.set(status.status);
 
-      if (status.status === 'active') {
-        try {
-          const sess = await api.auth.session();
-          session.set(sess);
-        } catch {
-          session.set(null);
-        }
+    if (status.status === 'active') {
+      try {
+        const sess = await api.auth.session();
+        session.set(sess);
+      } catch {
+        session.set(null);
       }
-    } catch {
-      // network error — allow UI to show
-    } finally {
-      loading = false;
     }
-  });
+  } catch {
+    // network error — allow UI to show
+  } finally {
+    loading = false;
+  }
+});
 
-  $: currentPath = $page.url.pathname;
-  $: isAuthed = $session !== null;
-  $: isUnclaimed = $installationStatus === 'unclaimed';
-  $: isPublicPath = currentPath.startsWith('/login') || currentPath.startsWith('/setup');
+$: currentPath = $page.url.pathname;
+$: isAuthed = $session !== null;
+$: isUnclaimed = $installationStatus === 'unclaimed';
+$: isPublicPath = currentPath.startsWith('/login') || currentPath.startsWith('/setup');
 </script>
 
 {#if loading}

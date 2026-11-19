@@ -1,4 +1,4 @@
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { type ExecutionContext, createParamDecorator } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../guards/session.guard.js';
 
 export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionContext) => {

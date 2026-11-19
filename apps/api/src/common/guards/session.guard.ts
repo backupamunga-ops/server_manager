@@ -1,13 +1,13 @@
+import type { SessionInfo } from '@cloudlane/contracts';
 import {
-  CanActivate,
-  ExecutionContext,
+  type CanActivate,
+  type ExecutionContext,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
+import type { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import type { SessionInfo } from '@cloudlane/contracts';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: SessionInfo;

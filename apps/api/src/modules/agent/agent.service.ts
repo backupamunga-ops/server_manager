@@ -1,8 +1,13 @@
-import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { createHmac, randomUUID } from 'node:crypto';
-import { connect as netConnect, type Socket } from 'node:net';
-import { AGENT_PROTOCOL_VERSION, type AgentCommand, type AgentOperation, type AgentResponse } from '@cloudlane/contracts';
+import { type Socket, connect as netConnect } from 'node:net';
+import {
+  AGENT_PROTOCOL_VERSION,
+  type AgentCommand,
+  type AgentOperation,
+  type AgentResponse,
+} from '@cloudlane/contracts';
+import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AgentService {
@@ -56,14 +61,18 @@ export class AgentService {
 
     const command: AgentCommand = { ...unsigned, signature };
 
-    this.logger.log(`Sending agent command: op=${operation} resource=${resourceId} cmd=${command.commandId}`);
+    this.logger.log(
+      `Sending agent command: op=${operation} resource=${resourceId} cmd=${command.commandId}`,
+    );
 
     // Connect to the UNIX socket and send the command
     const response = await this.sendOverSocket(command);
     this.logger.log(`Agent response: op=${operation} status=${response.status}`);
 
     if (response.status === 'rejected' || response.status === 'failed') {
-      throw new Error(`Agent ${response.status}: ${response.error?.code} — ${response.error?.message}`);
+      throw new Error(
+        `Agent ${response.status}: ${response.error?.code} — ${response.error?.message}`,
+      );
     }
 
     return response;
@@ -85,7 +94,7 @@ export class AgentService {
 
       socket.on('connect', () => {
         // Send the command as JSON + newline
-        socket.write(JSON.stringify(command) + '\n');
+        socket.write(`${JSON.stringify(command)}\n`);
       });
 
       socket.on('data', (data: Buffer) => {
@@ -142,7 +151,7 @@ export class AgentService {
    */
   private canonicalJson(obj: Record<string, unknown>): string {
     const keys = Object.keys(obj).sort();
-    const pairs = keys.map(k => JSON.stringify(k) + ':' + JSON.stringify(obj[k]));
-    return '{' + pairs.join(',') + '}';
+    const pairs = keys.map((k) => `${JSON.stringify(k)}:${JSON.stringify(obj[k])}`);
+    return `{${pairs.join(',')}}`;
   }
 }

@@ -1,8 +1,8 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../common/prisma.service.js';
-import { SecretsService } from '../secrets/secrets.service.js';
-import { randomBytes, createHash } from 'node:crypto';
+import type { ConfigService } from '@nestjs/config';
+import type { PrismaService } from '../../common/prisma.service.js';
+import type { SecretsService } from '../secrets/secrets.service.js';
 import { addMinutes } from './time-utils.js';
 
 const SESSION_BYTES = 32;
@@ -65,7 +65,13 @@ export class SessionService {
   }
 
   /** Validate a cookie value. Returns the session record if valid, else null. */
-  async validate(cookieValue: string | undefined): Promise<{ sessionId: string; userId: string; csrfToken: string; requiresStepUp: boolean; stepUpExpiresAt: Date | null } | null> {
+  async validate(cookieValue: string | undefined): Promise<{
+    sessionId: string;
+    userId: string;
+    csrfToken: string;
+    requiresStepUp: boolean;
+    stepUpExpiresAt: Date | null;
+  } | null> {
     if (!cookieValue) return null;
     const parts = cookieValue.split('.');
     if (parts.length !== 2) return null;
@@ -91,10 +97,12 @@ export class SessionService {
     if (!session) return null;
 
     // Touch lastSeenAt
-    await this.prisma.session.update({
-      where: { id: session.id },
-      data: { lastSeenAt: new Date() },
-    }).catch(() => {});
+    await this.prisma.session
+      .update({
+        where: { id: session.id },
+        data: { lastSeenAt: new Date() },
+      })
+      .catch(() => {});
 
     return {
       sessionId: session.id,
@@ -123,7 +131,18 @@ export class SessionService {
     });
   }
 
-  async listForUser(userId: string, currentSessionId: string): Promise<Array<{ id: string; ip: string | null; userAgent: string | null; lastSeenAt: Date; current: boolean }>> {
+  async listForUser(
+    userId: string,
+    currentSessionId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      ip: string | null;
+      userAgent: string | null;
+      lastSeenAt: Date;
+      current: boolean;
+    }>
+  > {
     const sessions = await this.prisma.session.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { lastSeenAt: 'desc' },
@@ -147,7 +166,11 @@ export class SessionService {
   }
 
   /** Rotate session identity (on login, privilege change, password change). */
-  async rotate(oldSessionId: string, ip: string | null, userAgent: string | null): Promise<{ cookieValue: string; sessionId: string; csrfToken: string }> {
+  async rotate(
+    oldSessionId: string,
+    ip: string | null,
+    userAgent: string | null,
+  ): Promise<{ cookieValue: string; sessionId: string; csrfToken: string }> {
     const old = await this.prisma.session.findUnique({ where: { id: oldSessionId } });
     if (!old) throw new Error('Session not found during rotation');
     const created = await this.create(old.userId, ip, userAgent);
