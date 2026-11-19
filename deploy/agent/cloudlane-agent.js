@@ -346,7 +346,7 @@ async function processCommand(cmd) {
         const snippetPath = path.join(CADDY_SERVICES_DIR, `${serviceId}.caddy`);
         const snippet = [
           `# Cloudlane managed route for service ${serviceId} (deployment ${deploymentId})`,
-          `handle /services/${serviceId}* {`,
+          `handle /services/${serviceId}/* {`,
           `  uri strip_prefix /services/${serviceId}`,
           `  reverse_proxy 127.0.0.1:${port}`,
           '}',
