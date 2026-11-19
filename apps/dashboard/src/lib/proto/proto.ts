@@ -1179,7 +1179,7 @@ function runDeployment(id: string): void {
   if (activeTimers.has(id)) return;
   const t = setInterval(() => {
     const d = findDeployment(id);
-    if (!d || ['LIVE', 'FAILED', 'CANCELLED'].includes(d.status)) {
+    if (!d || ['LIVE', 'FAILED', 'CANCELLED', 'SUPERSEDED'].includes(d.status)) {
       clearInterval(t);
       activeTimers.delete(id);
       return;
@@ -1230,7 +1230,7 @@ async function startDeployment(serviceId: string, failAt: string | null = null):
   const s = service(serviceId);
   if (!s) return;
   const ds = deploymentsFor(serviceId);
-  if (ds.some((d) => !['LIVE', 'FAILED', 'CANCELLED'].includes(d.status))) {
+  if (ds.some((d) => !['LIVE', 'FAILED', 'CANCELLED', 'SUPERSEDED'].includes(d.status))) {
     flash('A deployment is already running for this service.', true);
     return;
   }
@@ -2638,10 +2638,10 @@ export function mountApp(): () => void {
   window.addEventListener('popstate', onPopState);
   pollTimer = setInterval(() => {
     // Real deployments progress server-side: poll while any is non-final.
-    const busy = state.deployments.some((d) => !['LIVE', 'FAILED', 'CANCELLED'].includes(d.status) && !d.simulating);
+    const busy = state.deployments.some((d) => !['LIVE', 'FAILED', 'CANCELLED', 'SUPERSEDED'].includes(d.status) && !d.simulating);
     if (busy) {
       const key = state.deployments
-        .filter((d) => !['LIVE', 'FAILED', 'CANCELLED'].includes(d.status) && !d.simulating)
+        .filter((d) => !['LIVE', 'FAILED', 'CANCELLED', 'SUPERSEDED'].includes(d.status) && !d.simulating)
         .map((d) => d.id).sort().join(',');
       if (!pollFirstSeen[key]) pollFirstSeen[key] = Date.now();
       // A deployment stuck non-final must not re-render the whole app forever.
