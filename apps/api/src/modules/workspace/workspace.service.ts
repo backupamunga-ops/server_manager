@@ -187,11 +187,23 @@ export class WorkspaceService {
         revision: d.revision,
         logs: d.events.map((e) => ({ msg: e.message, level: e.level })),
       })),
-      domains: domains.map((d) => ({
-        id: d.id, name: d.host, status: d.status === 'VERIFIED' ? 'active' : d.status.toLowerCase(),
-        https: d.status === 'VERIFIED', created: d.createdAt.toISOString(),
-        type: d.host.endsWith('.apps.example.test') ? 'platform' : 'custom',
-      })),
+      domains: domains.map((d) => {
+        const appSuffix = this.config.get<string>('PLATFORM_APP_SUFFIX') ?? 'apps.example.test';
+        const platform = d.host.endsWith(`.${appSuffix}`);
+        const slug = platform ? d.host.slice(0, -appSuffix.length - 1) : '';
+        const hostnameSvc = new Map(
+          zones.flatMap((z) => z.hostnames).filter((h) => h.serviceId).map((h) => [h.name, h.serviceId as string]),
+        );
+        const slugSvc = new Map(services.map((s) => [
+          s.name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, ''), s.id,
+        ]));
+        return {
+          id: d.id, name: d.host, status: d.status === 'VERIFIED' ? 'active' : d.status.toLowerCase(),
+          https: d.status === 'VERIFIED', created: d.createdAt.toISOString(),
+          type: platform ? 'platform' : 'custom',
+          serviceId: hostnameSvc.get(d.host) ?? (platform ? slugSvc.get(slug) : undefined),
+        };
+      }),
       domainZones: zones.map((z) => ({
         id: z.id, name: z.name, status: z.status, dnsMode: z.dnsMode,
         pendingDnsMode: z.pendingDnsMode ?? undefined,
