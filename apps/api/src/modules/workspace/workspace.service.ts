@@ -795,6 +795,73 @@ export class WorkspaceService {
         await this.activity(wsId, 'Domain connected', `${h.name} → ${s.name}`, 'domain');
         break;
       }
+      case 'deleteService': {
+        const s = await findService(p.serviceId);
+        // best-effort container teardown (API runs on the VPS host)
+        try {
+          const { execFile } = await import('node:child_process');
+          const { promisify } = await import('node:util');
+          const run = promisify(execFile);
+          const { stdout } = await run('docker', ['ps', '--format', '{{.Names}}'])
+            .catch(() => ({ stdout: '' }));
+          const needles = [s.id, String(s.activeDeploymentId || '')].filter(Boolean);
+          const names = String(stdout).split('\n').filter((n) =>
+            needles.some((nd) => n.includes(nd)));
+          for (const name of names) {
+            await run('docker', ['rm', '-f', name]).catch(() => null);
+          }
+        } catch { /* teardown is best-effort */ }
+        // caddy routes + domain rows (platform URLs of this service)
+        const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        const candidates = [
+          `${slug}.${this.appSuffix}`,
+          `${slug}-${s.id.slice(-4)}.${this.appSuffix}`,
+        ];
+        for (const host of candidates) {
+          try { await this.domains.removeRoute(host, s.id); } catch { /* route may not exist */ }
+        }
+        const bound = await this.prisma.hostname.findMany({ where: { serviceId: s.id } });
+        for (const h of bound) {
+          try { await this.domains.removeRoute(h.name, s.id); } catch { /* ignore */ }
+        }
+        await this.prisma.domain.deleteMany({
+          where: { workspaceId: wsId, host: { in: [...candidates, ...bound.map((h) => h.name)] } },
+        });
+        await this.prisma.hostname.updateMany({
+          where: { serviceId: s.id }, data: { serviceId: null },
+        });
+        // clear the self-relation before deployments go away
+        await this.prisma.service.update({ where: { id: s.id }, data: { activeDeploymentId: null } });
+        // rows owned by the service (raw SQL: tolerant of tables that may not exist yet)
+        for (const stmt of [
+          'DELETE FROM "StorageObject" WHERE "bucketId" IN (SELECT id FROM "Bucket" WHERE "storageServiceId" = $1)',
+          'DELETE FROM "Bucket" WHERE "storageServiceId" = $1',
+          'DELETE FROM "StorageGrant" WHERE "serviceId" = $1',
+          'DELETE FROM "ZipSource" WHERE "serviceId" = $1',
+          'DELETE FROM "GithubInstallation" WHERE "serviceId" = $1',
+          'DELETE FROM "DbBackup" WHERE "serviceId" = $1',
+          'DELETE FROM "ServiceVariable" WHERE "serviceId" = $1',
+          'DELETE FROM "CronRun" WHERE "serviceId" = $1',
+          'DELETE FROM "CronJob" WHERE "serviceId" = $1',
+          'DELETE FROM "Deployment" WHERE "serviceId" = $1',
+        ]) {
+          await this.prisma.$executeRawUnsafe(stmt, s.id).catch(() => null);
+        }
+        await this.prisma.dbUser.deleteMany({ where: { serviceId: s.id } });
+        await this.prisma.serviceLink.deleteMany({
+          where: { OR: [{ fromServiceId: s.id }, { toServiceId: s.id }] },
+        });
+        try {
+          await this.prisma.service.delete({ where: { id: s.id } });
+        } catch {
+          // an unexpected FK is blocking deletion: park the service instead of failing silently
+          await this.prisma.service.update({
+            where: { id: s.id }, data: { desiredState: 'stopped', observedState: 'deleted' },
+          });
+        }
+        await this.activity(wsId, 'Service deleted', `${s.name} and its resources were removed.`, 'system');
+        break;
+      }
       case 'unassignHostname': {
         const h = await this.prisma.hostname.findFirst({
           where: { id: String(p.hostnameId), zone: { workspaceId: wsId } },

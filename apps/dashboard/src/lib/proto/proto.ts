@@ -635,7 +635,7 @@ function serviceView(): string {
   const sub = app ? `${s.framework} · ${cap(s.role)} · ${s.source === 'github' ? 'GitHub repository' : 'ZIP upload'}`
     : s.kind === 'database' ? `${s.engine} · ${s.database}`
     : `Scheduled ${s.method || 'HTTP'} request · ${s.timezone}`;
-  return `<button class="back" data-action="openProject" data-id="${s.projectId}">${ico('back', 15)} ${esc(p?.name || 'Project')}</button><div class="heading"><div><p class="eyebrow">${esc(p?.name || 'PROJECT')} / PRODUCTION</p><div class="row" style="gap:11px"><span class="status-icon ${s.kind === 'database' || s.kind === 'storage' ? 'gold' : s.kind === 'cron' ? 'purple' : 'mint'}" style="width:40px;height:40px">${ico(s.kind === 'storage' ? 'bucket' : itemIcon(s), 20)}</span><h1 class="detail-title">${esc(s.name)}</h1>${statusBadge(s.status)}</div><p class="detail-meta">${esc(sub)}</p></div><div class="head-actions">${s.kind === 'database' ? btn(`${ico('external', 15)} Open ${s.engine === 'PostgreSQL' ? 'Adminer' : 'phpMyAdmin'}`, 'openModal', 'btn-primary', `data-modal="dbAdmin" data-service="${s.id}"`) : ''}</div></div><div class="tabs">${tabs.map((t) => `<button class="tab ${ui.tab === t ? 'active' : ''}" data-action="serviceTab" data-tab="${t}">${cap(t)}</button>`).join('')}</div>${app ? applicationService(s) : s.kind === 'database' ? databaseService(s) : cronService(s)}`;
+  return `<button class="back" data-action="openProject" data-id="${s.projectId}">${ico('back', 15)} ${esc(p?.name || 'Project')}</button><div class="heading"><div><p class="eyebrow">${esc(p?.name || 'PROJECT')} / PRODUCTION</p><div class="row" style="gap:11px"><span class="status-icon ${s.kind === 'database' || s.kind === 'storage' ? 'gold' : s.kind === 'cron' ? 'purple' : 'mint'}" style="width:40px;height:40px">${ico(s.kind === 'storage' ? 'bucket' : itemIcon(s), 20)}</span><h1 class="detail-title">${esc(s.name)}</h1>${statusBadge(s.status)}</div><p class="detail-meta">${esc(sub)}</p></div><div class="head-actions">${s.kind === 'database' ? btn(`${ico('external', 15)} Open ${s.engine === 'PostgreSQL' ? 'Adminer' : 'phpMyAdmin'}`, 'openModal', 'btn-primary', `data-action="dbAdminGo" data-id="${s.id}" data-service="${s.id}"`) : ''}</div></div><div class="tabs">${tabs.map((t) => `<button class="tab ${ui.tab === t ? 'active' : ''}" data-action="serviceTab" data-tab="${t}">${cap(t)}</button>`).join('')}</div>${app ? applicationService(s) : s.kind === 'database' ? databaseService(s) : cronService(s)}`;
 }
 
 function applicationService(s: ServiceRec): string {
@@ -645,7 +645,7 @@ function applicationService(s: ServiceRec): string {
   if (ui.tab === 'artifacts') return appArtifactsView(s);
   if (ui.tab === 'volumes') return appVolumesView(s);
   if (ui.tab === 'overview')
-    return `<div class="grid two-wide"><div class="col" style="gap:17px"><div class="card"><div class="row space"><h3 class="section-title">Live application</h3>${statusBadge(s.status)}</div><p class="muted small">Production deployment endpoint</p><div class="callout"><div class="row space"><div class="col"><span class="muted xs">Public URL</span><span class="mono" style="font-size:13px;color:var(--mint);overflow-wrap:anywhere">https://${esc(primaryDomain(s.id))}</span></div>${btn(`${ico('copy', 14)} Copy`, 'copy', 'btn-small', `data-copy="https://${attr(primaryDomain(s.id))}"`)}</div></div><div class="divider"></div><div class="grid two"><div class="kv"><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${cap(s.role)}</span></div><div class="kv"><span class="k">Environment</span><span class="v">production</span><span class="k">Runtime</span><span class="v">Docker</span></div></div></div><div class="card"><div class="row space"><h3 class="section-title">Live preview</h3>${primaryDomain(s.id) !== 'Not configured' ? btn('Open in new tab', 'openExternal', 'btn-small', `data-url="https://${attr(primaryDomain(s.id))}"`) : ''}</div>${isVisualApp(s) ? `<div style="margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;height:280px;background:#0b1518"><iframe src="https://${attr(primaryDomain(s.id))}" loading="lazy" sandbox="allow-scripts" style="width:1440px;height:875px;border:0;transform:scale(0.33);transform-origin:0 0;pointer-events:none" title="Live preview"></iframe></div><p class="hint">Live view of the production URL. Use Open in new tab for the full app.</p>` : `<div style="margin-top:12px;border:1px dashed var(--border);border-radius:10px;height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted)">${ico('terminal', 24)}<span class="small">Backend service — no visual preview</span></div>`}</div><div class="card"><div class="row space"><h3 class="section-title">Latest deployment</h3><button class="link" data-action="serviceTab" data-tab="deployments">Deployment history</button></div>${d ? `<div class="row space" style="margin-top:17px"><div><div class="row">${statusBadge(d.status)}<span class="mono muted xs">${esc(d.revision)}</span></div><p class="muted xs">Started ${age(d.created)}</p></div>${btn('View logs', 'serviceTab', 'btn-small', 'data-tab="logs"')}</div>${d.status !== 'LIVE' && d.status !== 'FAILED' ? `<div class="progress skeleton"><span style="width:${Math.max(8, Number(d.stage) * 12)}%"></span></div>` : ''}` : '<p class="muted small">No deployment yet</p>'}</div></div></div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Source control</h3><div class="divider"></div><div class="row"><span class="status-icon">${ico(s.source === 'github' ? 'github' : 'archive', 17)}</span><div><div class="strong small">${esc(s.source === 'github' ? s.repo : s.fileName || 'Uploaded archive')}</div><div class="muted xs">${s.source === 'github' ? `Branch ${esc(s.branch || 'main')}` : 'Local ZIP source'}</div></div></div>${s.source === 'github' ? `<div class="divider"></div><div class="row space"><span class="muted xs">Automatic deploy</span>${badge(s.autoDeploy ? 'Enabled' : 'Disabled', s.autoDeploy ? 'ok' : 'warn')}</div><div style="margin-top:12px">${btn(`${ico('branch', 14)} Simulate new commit`, 'simulatePush', 'btn-small', `data-id="${s.id}"`)}</div>` : ''}</div><div class="card"><h3 class="section-title">Health &amp; networking</h3><div class="divider"></div><div class="row space"><span class="muted small">Health check</span>${statusBadge(s.status === 'running' ? 'healthy' : s.status)}</div><div class="row space" style="margin-top:11px"><span class="muted small">Domains</span><strong class="small">${domainsFor(s.id).length}</strong></div><div class="row space" style="margin-top:11px"><span class="muted small">Build strategy</span><strong class="small">Auto-detected</strong></div></div></div></div>`;
+    return `<div class="grid two-wide"><div class="col" style="gap:17px"><div class="card"><div class="row space"><h3 class="section-title">Live application</h3>${statusBadge(s.status)}</div><p class="muted small">Production deployment endpoint</p><div class="callout"><div class="row space"><div class="col"><span class="muted xs">Public URL</span><span class="mono" style="font-size:13px;color:var(--mint);overflow-wrap:anywhere">https://${esc(primaryDomain(s.id))}</span></div>${btn(`${ico('copy', 14)} Copy`, 'copy', 'btn-small', `data-copy="https://${attr(primaryDomain(s.id))}"`)}</div></div><div class="divider"></div><div class="grid two"><div class="kv"><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${cap(s.role)}</span></div><div class="kv"><span class="k">Environment</span><span class="v">production</span><span class="k">Runtime</span><span class="v">Docker</span></div></div></div><div class="card" style="border-color:#e5484d"><div class="row space"><h3 class="section-title">Danger zone</h3></div><p class="muted small">Deleting removes the service, its platform routes, database users and deployment history. This cannot be undone.</p><button class="btn" data-action="deleteServiceAsk" data-id="${s.id}" style="color:#ff8f8f;border-color:#e5484d">Delete service</button></div><div class="card"><div class="row space"><h3 class="section-title">Live preview</h3>${primaryDomain(s.id) !== 'Not configured' ? btn('Open in new tab', 'openExternal', 'btn-small', `data-url="https://${attr(primaryDomain(s.id))}"`) : ''}</div>${isVisualApp(s) ? `<div style="margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;height:280px;background:#0b1518"><iframe id="preview-frame" src="https://${attr(primaryDomain(s.id))}" loading="lazy" sandbox="allow-scripts" style="width:1440px;height:875px;border:0;transform:scale(0.33);transform-origin:0 0;pointer-events:none" title="Live preview"></iframe></div><p class="hint">Live view of the production URL. Use Open in new tab for the full app.</p>` : `<div style="margin-top:12px;border:1px dashed var(--border);border-radius:10px;height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted)">${ico('terminal', 24)}<span class="small">Backend service — no visual preview</span></div>`}</div><div class="card"><div class="row space"><h3 class="section-title">Latest deployment</h3><button class="link" data-action="serviceTab" data-tab="deployments">Deployment history</button></div>${d ? `<div class="row space" style="margin-top:17px"><div><div class="row">${statusBadge(d.status)}<span class="mono muted xs">${esc(d.revision)}</span></div><p class="muted xs">Started ${age(d.created)}</p></div>${btn('View logs', 'serviceTab', 'btn-small', 'data-tab="logs"')}</div>${d.status !== 'LIVE' && d.status !== 'FAILED' ? `<div class="progress skeleton"><span style="width:${Math.max(8, Number(d.stage) * 12)}%"></span></div>` : ''}` : '<p class="muted small">No deployment yet</p>'}</div></div></div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Source control</h3><div class="divider"></div><div class="row"><span class="status-icon">${ico(s.source === 'github' ? 'github' : 'archive', 17)}</span><div><div class="strong small">${esc(s.source === 'github' ? s.repo : s.fileName || 'Uploaded archive')}</div><div class="muted xs">${s.source === 'github' ? `Branch ${esc(s.branch || 'main')}` : 'Local ZIP source'}</div></div></div>${s.source === 'github' ? `<div class="divider"></div><div class="row space"><span class="muted xs">Automatic deploy</span>${badge(s.autoDeploy ? 'Enabled' : 'Disabled', s.autoDeploy ? 'ok' : 'warn')}</div><div style="margin-top:12px">${btn(`${ico('branch', 14)} Simulate new commit`, 'simulatePush', 'btn-small', `data-id="${s.id}"`)}</div>` : ''}</div><div class="card"><h3 class="section-title">Health &amp; networking</h3><div class="divider"></div><div class="row space"><span class="muted small">Health check</span>${statusBadge(s.status === 'running' ? 'healthy' : s.status)}</div><div class="row space" style="margin-top:11px"><span class="muted small">Domains</span><strong class="small">${domainsFor(s.id).length}</strong></div><div class="row space" style="margin-top:11px"><span class="muted small">Build strategy</span><strong class="small">Auto-detected</strong></div></div></div></div>`;
   if (ui.tab === 'deployments')
     return `<div class="row space" style="margin-bottom:16px"><h3 class="section-title">Deployment history</h3>${btn(`${ico('refresh', 14)} Redeploy`, 'redeploy', '', `data-id="${s.id}"`)}</div><div class="card table-frame"><div class="table-wrap"><table class="table"><thead><tr><th>Release</th><th>Revision</th><th>Started</th><th>Status</th><th>Actions</th></tr></thead><tbody>${ds.map((d) => `<tr><td class="mono main-cell">${esc(d.id)}</td><td class="mono">${esc(d.revision)}</td><td>${date(d.created)}</td><td>${statusBadge(d.status)}</td><td><div class="row">${btn('Logs', 'openLogs', 'btn-small', `data-id="${d.id}"`)}${d.status === 'LIVE' && d.id !== s.activeDeployment ? btn('Rollback', 'rollback', 'btn-small', `data-id="${d.id}"`) : ''}</div></td></tr>`).join('')}</tbody></table></div></div><p class="hint">Rollback reactivates a retained successful release.</p>`;
   if (ui.tab === 'logs') {
@@ -702,7 +702,7 @@ function consolePreview(s: ServiceRec): string {
   const samples = postgres ? ['SELECT current_database()', 'SELECT table_name FROM information_schema.tables LIMIT 5', 'SELECT * FROM users LIMIT 5']
     : ['SELECT DATABASE()', 'SHOW TABLES', 'SELECT * FROM users LIMIT 5'];
   const output = (ui.sqlResult as { serviceId: string; blocked: boolean; columns: string[]; rows: unknown[][]; message: string } | null)?.serviceId === s.id ? ui.sqlResult : null;
-  return `<div class="term-banner" style="margin-bottom:17px">${ico('shield', 18)}<div><strong>Read-only database console · simulation</strong><div style="margin-top:3px">This is a canned SQL preview, not a database connection. In production the SQL console needs separate database credentials, scoped permissions, session expiry, query limits and auditing.</div></div></div><div class="sql-cards"><div class="card"><div class="row space"><div><h3 class="section-title">${esc(s.engine)} console</h3><p class="muted xs">${esc(s.database)} · production</p></div>${badge('Read-only demo', 'blue')}</div><div class="divider"></div><form id="sqlConsoleForm"><label class="form-label" for="sqlQuery">Query editor</label><textarea name="query" id="sqlQuery" class="sql-editor" maxlength="300" required spellcheck="false" placeholder="${attr(samples[0])}">${esc(String(ui.sqlDraft) || samples[0])}</textarea><div class="row space" style="flex-wrap:wrap;margin-top:11px"><button type="submit" class="btn btn-primary">${ico('play', 14)} Run preview</button><span class="muted xs">SELECT-only samples · no actual queries</span></div></form>${output ? `<div class="divider"></div><div class="row space"><h3 class="section-title">Result</h3>${badge(output.blocked ? 'Not permitted' : `${output.rows.length} rows`, output.blocked ? 'warn' : 'ok')}</div><p class="muted xs" style="margin:10px 0">${esc(output.message)}</p>${!output.blocked ? `<div class="table-wrap"><table class="table"><thead><tr>${output.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${output.rows.map((row) => `<tr>${row.map((v) => `<td class="mono">${esc(String(v))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}` : ''}</div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Example queries</h3><div class="col" style="margin-top:14px;align-items:flex-start">${samples.map((q) => `<button class="term-command-chip" data-action="sqlFill" data-query="${attr(q)}">${esc(q)}</button>`).join('')}</div></div><div class="card"><h3 class="section-title">Database administration</h3><p class="muted small">For full database administration, use the engine-specific administration tool with separate authentication and database privileges.</p><div style="margin-top:14px">${btn(`${ico('external', 15)} Open ${postgres ? 'Adminer' : 'phpMyAdmin'}`, 'openModal', '', `data-modal="dbAdmin" data-service="${s.id}"`)}</div><p class="hint">Signed in automatically as the database application user.</p></div></div></div>`;
+  return `<div class="term-banner" style="margin-bottom:17px">${ico('shield', 18)}<div><strong>Read-only database console · simulation</strong><div style="margin-top:3px">This is a canned SQL preview, not a database connection. In production the SQL console needs separate database credentials, scoped permissions, session expiry, query limits and auditing.</div></div></div><div class="sql-cards"><div class="card"><div class="row space"><div><h3 class="section-title">${esc(s.engine)} console</h3><p class="muted xs">${esc(s.database)} · production</p></div>${badge('Read-only demo', 'blue')}</div><div class="divider"></div><form id="sqlConsoleForm"><label class="form-label" for="sqlQuery">Query editor</label><textarea name="query" id="sqlQuery" class="sql-editor" maxlength="300" required spellcheck="false" placeholder="${attr(samples[0])}">${esc(String(ui.sqlDraft) || samples[0])}</textarea><div class="row space" style="flex-wrap:wrap;margin-top:11px"><button type="submit" class="btn btn-primary">${ico('play', 14)} Run preview</button><span class="muted xs">SELECT-only samples · no actual queries</span></div></form>${output ? `<div class="divider"></div><div class="row space"><h3 class="section-title">Result</h3>${badge(output.blocked ? 'Not permitted' : `${output.rows.length} rows`, output.blocked ? 'warn' : 'ok')}</div><p class="muted xs" style="margin:10px 0">${esc(output.message)}</p>${!output.blocked ? `<div class="table-wrap"><table class="table"><thead><tr>${output.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${output.rows.map((row) => `<tr>${row.map((v) => `<td class="mono">${esc(String(v))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}` : ''}</div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Example queries</h3><div class="col" style="margin-top:14px;align-items:flex-start">${samples.map((q) => `<button class="term-command-chip" data-action="sqlFill" data-query="${attr(q)}">${esc(q)}</button>`).join('')}</div></div><div class="card"><h3 class="section-title">Database administration</h3><p class="muted small">For full database administration, use the engine-specific administration tool with separate authentication and database privileges.</p><div style="margin-top:14px">${btn(`${ico('external', 15)} Open ${postgres ? 'Adminer' : 'phpMyAdmin'}`, 'openModal', '', `data-action="dbAdminGo" data-id="${s.id}" data-service="${s.id}"`)}</div><p class="hint">Signed in automatically as the database application user.</p></div></div></div>`;
 }
 
 function databaseService(s: ServiceRec): string {
@@ -1163,6 +1163,7 @@ const STAGES: [string, string, string][] = [
 ];
 const activeTimers = new Map<string, ReturnType<typeof setInterval>>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollFirstSeen: Record<string, number> = {};
 
 function addLog(d: DeploymentRec, msg: string, level = 'info'): void {
   d.logs.push({ msg, level });
@@ -2263,7 +2264,7 @@ function snapshotModalInputs(): Array<Record<string, unknown>> {
   let focusedKey: string | null = null;
   let caret: number | null = null;
   modal.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
-    'input:not([type=file]), select, textarea',
+    'input, select, textarea',
   ).forEach((el) => {
     const key = el.dataset.snapKey
       ?? (el.dataset.snapKey = `${el.tagName}:${el.name || el.id || ''}:${Array.from(el.parentElement?.children ?? []).indexOf(el)}`);
@@ -2276,6 +2277,8 @@ function snapshotModalInputs(): Array<Record<string, unknown>> {
     out.push({
       key,
       value: el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked : el.value,
+      files: el instanceof HTMLInputElement && el.type === 'file' && el.files && el.files.length
+        ? Array.from(el.files) : null,
     });
   });
   return [{ __focus: focusedKey, __caret: caret }, ...out];
@@ -2287,13 +2290,19 @@ function restoreModalInputs(snap: Array<Record<string, unknown>>): void {
   const modal = document.getElementById('modal');
   if (!modal) return;
   modal.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
-    'input:not([type=file]), select, textarea',
+    'input, select, textarea',
   ).forEach((el) => {
     const key = el.dataset.snapKey
       ?? (el.dataset.snapKey = `${el.tagName}:${el.name || el.id || ''}:${Array.from(el.parentElement?.children ?? []).indexOf(el)}`);
-    const saved = snap.slice(1).find((s) => (s as { key: string }).key === key) as { value: unknown } | undefined;
+    const saved = snap.slice(1).find((s) => (s as { key: string }).key === key) as { value: unknown; files?: File[] | null } | undefined;
     if (!saved) return;
-    if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+    if (el instanceof HTMLInputElement && el.type === 'file' && saved.files) {
+      try {
+        const dt = new DataTransfer();
+        for (const f of saved.files as File[]) dt.items.add(f);
+        el.files = dt.files;
+      } catch { /* DataTransfer unavailable */ }
+    } else if (el instanceof HTMLInputElement && el.type === 'checkbox') {
       el.checked = Boolean(saved.value);
     } else if (saved.value !== undefined && el.value !== saved.value) {
       el.value = String(saved.value);
@@ -2307,7 +2316,22 @@ function restoreModalInputs(snap: Array<Record<string, unknown>>): void {
   });
 }
 
+let lastRenderedHtml = '';
+let lastRenderAt = 0;
+
+/** Keep the live-preview iframe alive across re-renders (no reload flash). */
+function transplantPreview(prev: HTMLIFrameElement | null): void {
+  const fresh = document.getElementById('preview-frame') as HTMLIFrameElement | null;
+  if (!fresh) {
+    return;
+  }
+  if (prev && prev !== fresh && prev.getAttribute('src') === fresh.getAttribute('src')) {
+    fresh.replaceWith(prev);
+  }
+}
+
 function render(): void {
+  lastRenderAt = Date.now();
   const root = document.getElementById('app');
   if (!root) return;
   if (!loaded) {
@@ -2315,6 +2339,7 @@ function render(): void {
     return;
   }
   const modalSnap = snapshotModalInputs();
+  const oldPreview = document.getElementById('preview-frame') as HTMLIFrameElement | null;
   const pageFns: Record<string, () => string> = {
     overview, projects: projectsView, project: projectView, service: serviceView,
     databases: () => servicesIndex('database'), cron: () => servicesIndex('cron'),
@@ -2323,10 +2348,19 @@ function render(): void {
     storageIndex: storageOverview, docs: docsView,
   };
   const page = (pageFns[ui.page as string] || overview)();
-  root.innerHTML =
+  const nextHtml =
     `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div></main></div>${ui.modal ? modalView() : ''}`;
+  if (nextHtml === lastRenderedHtml) {
+    renderToast();
+    return;
+  }
+  const looping = Date.now() - lastRenderAt < 3000;
+  lastRenderedHtml = nextHtml;
+  root.innerHTML = nextHtml;
+  transplantPreview(oldPreview);
   restoreModalInputs(modalSnap);
   renderToast();
+  if (looping) console.warn('[cloudlane] frequent re-render; identity-render guard active');
   const fab = root.querySelector('.ai-fab') as HTMLElement | null;
   if (!fab) {
     const el = document.createElement('button');
@@ -2605,7 +2639,16 @@ export function mountApp(): () => void {
   pollTimer = setInterval(() => {
     // Real deployments progress server-side: poll while any is non-final.
     const busy = state.deployments.some((d) => !['LIVE', 'FAILED', 'CANCELLED'].includes(d.status) && !d.simulating);
-    if (busy) void syncState().then(render);
+    if (busy) {
+      const key = state.deployments
+        .filter((d) => !['LIVE', 'FAILED', 'CANCELLED'].includes(d.status) && !d.simulating)
+        .map((d) => d.id).sort().join(',');
+      if (!pollFirstSeen[key]) pollFirstSeen[key] = Date.now();
+      // A deployment stuck non-final must not re-render the whole app forever.
+      if (Date.now() - pollFirstSeen[key] < 15 * 60 * 1000) void syncState().then(render);
+    } else {
+      pollFirstSeen = {};
+    }
   }, 2500);
   return () => {
     document.removeEventListener('click', onClick);
@@ -2631,3 +2674,19 @@ export function mountApp(): () => void {
     termExpiryTimer = null;
   };
 }
+
+
+/* Service delete (Danger zone) — capture-phase so it works regardless of dispatch order. */
+document.addEventListener('click', (e) => {
+  const el = (e.target as HTMLElement).closest('[data-action="deleteServiceAsk"]');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const id = el.getAttribute('data-id') || '';
+  if (id && confirm('Delete this service? Routes, database users and deployments are removed. This cannot be undone.')) {
+    void (async () => {
+      const ok = await apply('deleteService', { serviceId: id });
+      if (ok) { ui.page = 'projects'; void render(); }
+    })();
+  }
+}, true);
