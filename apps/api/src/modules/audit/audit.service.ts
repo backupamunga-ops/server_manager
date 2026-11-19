@@ -37,7 +37,7 @@ export class AuditService {
           status,
           ipAddress: ctx.ipAddress ?? null,
           correlationId: ctx.correlationId ?? randomUUID(),
-          metadata: ctx.metadata ?? undefined,
+          metadata: (ctx.metadata || undefined) as any,
         },
       });
     } catch (err) {

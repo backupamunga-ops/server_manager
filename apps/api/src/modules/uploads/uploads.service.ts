@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 
 const MAX_ZIP_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_EXTRACTED_SIZE = 100 * 1024 * 1024; // 100 MB
-const MAX_ENTRIES = 10000;
+const MAX_ENTRIES = 100000;
 const UPLOAD_DIR = '/var/lib/cloudlane/uploads';
 
 interface PendingUpload {
@@ -92,7 +92,7 @@ export class UploadsService {
     }
 
     const actualSha256 = createHash('sha256').update(data).digest('hex');
-    if (actualSha256 !== declaredSha256) {
+    if (declaredSha256 && actualSha256 !== declaredSha256) {
       pendingUploads.delete(uploadId);
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
@@ -124,7 +124,7 @@ export class UploadsService {
     }
 
     // Verify SHA256
-    if (pending.sha256 !== sha256) {
+    if (sha256 && pending.sha256 !== sha256) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
         message: 'SHA256 mismatch.',

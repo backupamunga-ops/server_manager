@@ -1,4 +1,5 @@
-import { Body, Controller, Param, Post, Put, UseGuards, UseInterceptors, Req } from '@nestjs/common';
+import { Body, Controller, Param, Post, Put, Req, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { UploadsService } from './uploads.service.js';
@@ -7,7 +8,7 @@ import { IsNumber, IsString, Max, Min } from 'class-validator';
 
 class UploadInitDto {
   @IsString() filename!: string;
-  @Min(1) @Max(50 * 1024 * 1024) size!: number;
+  @Min(1) @Max(100 * 1024 * 1024) size!: number;
   @IsString() mimeType!: string;
 }
 
@@ -27,22 +28,25 @@ export class UploadsController {
     return await this.uploads.init(body.filename, body.size, body.mimeType);
   }
 
-  /**
-   * Receive the actual file data. This endpoint accepts the raw ZIP body.
-   * The SHA256 is passed as a query parameter for verification.
-   */
   @Put(':uploadId/receive')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
   async receive(
     @Param('uploadId') uploadId: string,
+    @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,
   ) {
-    const sha256 = (req.query.sha256 as string) || '';
-    const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
-    if (!rawBody) {
-      return { error: { code: 'NO_BODY', message: 'Request body is empty.' } };
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      const rawBody = (req as any).rawBody;
+      if (rawBody && Buffer.isBuffer(rawBody) && rawBody.length > 0) {
+        const sha256 = (req.query as any).sha256 || '';
+        await this.uploads.receive(uploadId, rawBody, sha256);
+        return { received: true, size: rawBody.length };
+      }
+      return { error: { code: 'NO_FILE', message: 'No file in request.' } };
     }
-    await this.uploads.receive(uploadId, rawBody, sha256);
-    return { received: true, size: rawBody.length };
+    const sha256 = (req.query as any).sha256 || '';
+    await this.uploads.receive(uploadId, file.buffer, sha256);
+    return { received: true, size: file.size };
   }
 
   @Post(':uploadId/finalize')

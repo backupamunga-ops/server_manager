@@ -49,7 +49,7 @@ export class AuthService {
     this.checkRateLimit(ip, 'login');
 
     const user = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: email.toLowerCase() }, include: { password: true },
     });
 
     // Constant-ish-time: even if user not found, do a dummy hash verify

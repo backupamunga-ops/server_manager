@@ -50,7 +50,7 @@ export class PasswordService {
   }
 
   getPepperVersion(): number {
-    return this.pepperVersion;
+    return Number(this.pepperVersion);
   }
 
   private applyPepper(plaintext: string): string {

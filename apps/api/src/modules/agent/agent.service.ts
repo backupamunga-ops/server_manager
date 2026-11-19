@@ -141,6 +141,8 @@ export class AgentService {
    * Must match the Go agent's canonicalJSON function exactly.
    */
   private canonicalJson(obj: Record<string, unknown>): string {
-    return JSON.stringify(obj, Object.keys(obj).sort());
+    const keys = Object.keys(obj).sort();
+    const pairs = keys.map(k => JSON.stringify(k) + ':' + JSON.stringify(obj[k]));
+    return '{' + pairs.join(',') + '}';
   }
 }

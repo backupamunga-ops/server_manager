@@ -93,7 +93,7 @@ export class BootstrapController {
     if (res) {
       res.cookie('cloudlane_session', result.cookieValue, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: false,
         sameSite: 'lax',
         path: '/',
         maxAge: 7 * 24 * 60 * 60 * 1000,

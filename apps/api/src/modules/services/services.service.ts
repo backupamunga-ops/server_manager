@@ -177,7 +177,7 @@ export class ServicesService {
     });
 
     // Clean up the upload staging
-    this.uploads.cleanup(uploadId);
+    
 
     return { serviceId, deploymentId };
   }
