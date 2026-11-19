@@ -36,9 +36,17 @@ install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 
-# Add the repository
+# Add the repository — use "noble" as fallback codename if the current
+# Ubuntu version's codename isn't published on Docker's apt repo yet.
+# Docker packages are forward-compatible across Ubuntu LTS versions.
 . /etc/os-release
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" > /etc/apt/sources.list.d/docker.list
+APT_CODENAME="$VERSION_CODENAME"
+# Test if the repo exists for this codename, fall back to noble if not
+if ! curl -fsS "https://download.docker.com/linux/ubuntu/dists/$APT_CODENAME/Release" &>/dev/null; then
+  log_info "Docker repo not available for codename '$APT_CODENAME', falling back to 'noble'"
+  APT_CODENAME="noble"
+fi
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $APT_CODENAME stable" > /etc/apt/sources.list.d/docker.list
 
 apt-get update -qq
 apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>&1 | tail -5

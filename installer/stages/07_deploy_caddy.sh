@@ -23,10 +23,16 @@ export DEBIAN_FRONTEND=noninteractive
 
 . /etc/os-release
 install -m 0755 -d /etc/apt/keyrings
-curl -fsSL "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /etc/apt/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null || \
-  curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=amd64" -o /tmp/caddy-pubkey && gpg --dearmor < /tmp/caddy-pubkey > /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
+curl -fsSL "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /etc/apt/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null || true
+chmod a+r /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
 
-echo "deb [signed-by=/etc/apt/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/ubuntu $VERSION_CODENAME main" > /etc/apt/sources.list.d/caddy-stable.list
+APT_CODENAME="$VERSION_CODENAME"
+# Fall back to "noble" if Caddy repo doesn't have packages for this codename
+if ! curl -fsS "https://dl.cloudsmith.io/public/caddy/stable/deb/ubuntu/dists/$APT_CODENAME/Release" &>/dev/null; then
+  log_info "Caddy repo not available for codename '$APT_CODENAME', falling back to 'noble'"
+  APT_CODENAME="noble"
+fi
+echo "deb [signed-by=/etc/apt/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/ubuntu $APT_CODENAME main" > /etc/apt/sources.list.d/caddy-stable.list
 
 apt-get update -qq
 apt-get install -y -qq caddy 2>&1 | tail -3

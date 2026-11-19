@@ -60,11 +60,11 @@ check_os() {
     return
   fi
 
-  if [[ "$VERSION_ID" != "24.04" ]]; then
+  if [[ "$VERSION_ID" != "24.04" && "$VERSION_ID" != "26.04" ]]; then
     if [[ "$VERSION_ID" == "22.04" ]]; then
       warn "Ubuntu 22.04 detected. Supported but not the primary target. Proceed with caution."
     else
-      fail "Unsupported Ubuntu version: $VERSION_ID. Only 24.04 LTS is supported."
+      fail "Unsupported Ubuntu version: $VERSION_ID. Only 24.04 LTS and 26.04 LTS are supported."
       return
     fi
   fi
