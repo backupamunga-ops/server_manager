@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
@@ -75,7 +75,17 @@ export class DeploymentsService {
       if (!matched) return;
     }
     for (const host of candidates) {
-      const d = await this.prisma.domain.findFirst({ where: { host, workspaceId } });
+      let d = await this.prisma.domain.findFirst({ where: { host, workspaceId } });
+      if (!d && host === candidates[0]) {
+        // Services created before the platform-URL flow have no row — register
+        // the canonical URL now so routes survive future redeploys.
+        d = await this.prisma.domain.create({
+          data: {
+            workspaceId, host, status: 'VERIFIED', dnsMode: 'MANUAL',
+            verificationToken: `verify-${randomUUID()}`,
+          },
+        }).catch(() => null);
+      }
       if (!d) continue;
       try {
         await this.domainsPipeline.routeFor(host, { id: serviceId, name: serviceName });

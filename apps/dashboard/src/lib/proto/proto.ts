@@ -51,7 +51,12 @@ interface CloudlaneState {
   version: number;
   workspace: string;
   githubConnected: boolean;
-  server: { id: string; name: string; os: string; cpu: number; ram: number; disk: number; healthy: boolean };
+  server: {
+    id: string; name: string; os: string; cpu: number; cpuLoadPct: number;
+    ramTotalMb: number; ramUsedMb: number; ramPct: number;
+    diskTotalGb: number; diskUsedGb: number; diskPct: number;
+    uptimeDays: number; healthy: boolean;
+  };
   projects: { id: string; name: string; slug: string; created: string }[];
   services: ServiceRec[];
   deployments: DeploymentRec[];
@@ -75,7 +80,12 @@ interface CloudlaneState {
 /* Empty shell until the first aggregate arrives; render() is gated on loaded. */
 let state: CloudlaneState = {
   version: 1, workspace: 'Workspace', githubConnected: false,
-  server: { id: 'srv_main', name: 'primary-vps', os: 'Ubuntu 24.04 LTS', cpu: 1, ram: 1024, disk: 10, healthy: true },
+  server: {
+    id: 'srv_main', name: 'server', os: 'Linux', cpu: 1, cpuLoadPct: 0,
+    ramTotalMb: 1024, ramUsedMb: 0, ramPct: 0,
+    diskTotalGb: 10, diskUsedGb: 0, diskPct: 0,
+    uptimeDays: 0, healthy: true,
+  },
   projects: [], services: [], deployments: [], domains: [], domainZones: [], hostnames: [],
   dnsRecords: [], mailboxes: [], mailAliases: [], dbUsers: [], cronRuns: [], activities: [],
   apiKeys: [], serviceLinks: [], buckets: [], objects: [], storageGrants: [], volumes: [],
@@ -398,20 +408,30 @@ function activityMarkup(items: ActivityRec[]): string {
   return `<div class="activity-list">${items.length ? items.map((a) => `<div class="activity-item"><span class="activity-icon">${ico(({ deploy: 'rocket', database: 'database', cron: 'clock', domain: 'globe', project: 'folder', system: 'settings' } as Record<string, string>)[a.type] || 'pulse', 15)}</span><div class="activity-body"><span class="activity-text">${esc(a.title)}</span><span class="activity-detail">${esc(a.detail)}</span><span class="activity-time">${esc(age(a.created))}</span></div></div>`).join('') : '<p class="muted small">No activity yet.</p>'}</div>`;
 }
 
+function serverSpec(): string {
+  const s = state.server;
+  return `${s.cpu} vCPU · ${(s.ramTotalMb / 1024).toFixed(1)} GB RAM · ${s.diskTotalGb} GB disk`;
+}
+
+function serverBadge(): string {
+  return badge(state.server.healthy ? 'Healthy' : 'Degraded', state.server.healthy ? 'ok' : 'warn');
+}
+
 function healthBlock(): string {
+  const s = state.server;
   const vals: [string, number, string][] = [
-    ['CPU usage', 23, '0.23 / 1 vCPU'],
-    ['Memory usage', 51, '522 MB / 1,024 MB'],
-    ['Disk usage', 46, '4.6 GB / 10 GB']
+    ['CPU load', s.cpuLoadPct, `${s.cpu} vCPU · 1-min load ${s.cpuLoadPct}%`],
+    ['Memory usage', s.ramPct, `${s.ramUsedMb} MB / ${s.ramTotalMb} MB`],
+    ['Disk usage', s.diskPct, `${s.diskUsedGb} GB / ${s.diskTotalGb} GB used`],
   ];
-  return `<div class="metrics">${vals.map(([n, v, t]) => `<div class="metric"><div class="metric-label"><span class="muted">${n}</span><span class="metric-value">${v}%</span></div><div class="progress"><span style="width:${v}%"></span></div><div class="hint">${t} · simulated</div></div>`).join('')}</div>`;
+  return `<div class="metrics">${vals.map(([n, v, t]) => `<div class="metric"><div class="metric-label"><span class="muted">${n}</span><span class="metric-value">${v}%</span></div><div class="progress"><span style="width:${Math.max(2, Math.min(100, v))}%"></span></div><div class="hint">${t} · live from the host${s.uptimeDays ? ` · up ${s.uptimeDays}d` : ''}</div></div>`).join('')}</div>`;
 }
 
 function overview(): string {
   const active = state.services.filter((s) => s.kind === 'application' && s.status === 'running').length;
   const db = state.services.filter((s) => s.kind === 'database').length;
   const jobs = state.services.filter((s) => s.kind === 'cron').length;
-  return `${heading('YOUR INFRASTRUCTURE', 'Good morning, builder.', 'Everything you need to deploy, run and manage your services, in one place.', btn(`${ico('plus', 16)} Create new`, 'new', 'btn-primary'))}<div class="grid four">${statsCard('folder', state.projects.length, 'Projects', 'Organized workspaces')}${statsCard('rocket', active, 'Live applications', 'Across all projects')}${statsCard('database', db, 'Databases', 'Provisioned services')}${statsCard('clock', jobs, 'Scheduled jobs', 'Independent workflows')}</div><div class="section-head"><h2 class="section-title">Quick actions</h2></div><div class="grid three"><button class="quicklink" data-action="openModal" data-modal="deploy"><span class="status-icon mint">${ico('rocket', 19)}</span><span><div class="q-name">Deploy an application</div><div class="q-desc">From ZIP or GitHub</div></span><span style="margin-left:auto;color:var(--muted)">${ico('chevron', 15)}</span></button><button class="quicklink" data-action="openModal" data-modal="database"><span class="status-icon">${ico('database', 19)}</span><span><div class="q-name">Create database</div><div class="q-desc">PostgreSQL, MySQL, MariaDB</div></span><span style="margin-left:auto;color:var(--muted)">${ico('chevron', 15)}</span></button><button class="quicklink" data-action="openModal" data-modal="cron"><span class="status-icon gold">${ico('clock', 19)}</span><span><div class="q-name">Schedule a cron job</div><div class="q-desc">HTTP callbacks or tasks</div></span><span style="margin-left:auto;color:var(--muted)">${ico('chevron', 15)}</span></button></div><div class="card" style="margin-top:16px"><div class="row space" style="flex-wrap:wrap;gap:12px"><div class="row"><span class="status-icon gold">${ico('bucket', 19)}</span><div><strong class="small">Object storage &amp; media</strong><p class="muted xs">Private KYC documents, profile photos, and managed buckets—never VPS system files.</p></div></div>${btn('Explore storage →', 'storageIndex', 'btn-small')}</div></div><div class="section-head"><div><h2 class="section-title">Your projects</h2><div class="sub">A unified home for every service</div></div><button class="link" data-action="go" data-page="projects">View all ${ico('arrow', 14)}</button></div><div class="grid three">${state.projects.slice(0, 3).map(projectCard).join('')}${state.projects.length === 0 ? '<div class="card empty">No projects yet.</div>' : ''}</div><div class="section-head"><h2 class="section-title">Operations</h2></div><div class="grid two-wide"><div class="card"><div class="row space"><h3 class="section-title">Server health</h3>${badge('Healthy', 'ok')}</div><p class="muted small">${esc(state.server.name)} · ${esc(state.server.os)}</p>${healthBlock()}<div class="divider"></div><div class="row space"><span class="xs muted">Starter VPS budget</span><span class="xs strong">1 vCPU · 1 GB RAM · 10 GB disk</span></div><p class="hint" style="margin-top:9px">On a 1 GB VPS, build heavy projects off-server; avoid concurrent builds and databases.</p></div><div class="card"><div class="row space"><h3 class="section-title">Recent activity</h3><button class="link" data-action="go" data-page="activity">All activity</button></div>${activityMarkup(state.activities.slice(0, 4))}</div></div>`;
+  return `${heading('YOUR INFRASTRUCTURE', 'Good morning, builder.', 'Everything you need to deploy, run and manage your services, in one place.', btn(`${ico('plus', 16)} Create new`, 'new', 'btn-primary'))}<div class="grid four">${statsCard('folder', state.projects.length, 'Projects', 'Organized workspaces')}${statsCard('rocket', active, 'Live applications', 'Across all projects')}${statsCard('database', db, 'Databases', 'Provisioned services')}${statsCard('clock', jobs, 'Scheduled jobs', 'Independent workflows')}</div><div class="section-head"><h2 class="section-title">Quick actions</h2></div><div class="grid three"><button class="quicklink" data-action="openModal" data-modal="deploy"><span class="status-icon mint">${ico('rocket', 19)}</span><span><div class="q-name">Deploy an application</div><div class="q-desc">From ZIP or GitHub</div></span><span style="margin-left:auto;color:var(--muted)">${ico('chevron', 15)}</span></button><button class="quicklink" data-action="openModal" data-modal="database"><span class="status-icon">${ico('database', 19)}</span><span><div class="q-name">Create database</div><div class="q-desc">PostgreSQL, MySQL, MariaDB</div></span><span style="margin-left:auto;color:var(--muted)">${ico('chevron', 15)}</span></button><button class="quicklink" data-action="openModal" data-modal="cron"><span class="status-icon gold">${ico('clock', 19)}</span><span><div class="q-name">Schedule a cron job</div><div class="q-desc">HTTP callbacks or tasks</div></span><span style="margin-left:auto;color:var(--muted)">${ico('chevron', 15)}</span></button></div><div class="card" style="margin-top:16px"><div class="row space" style="flex-wrap:wrap;gap:12px"><div class="row"><span class="status-icon gold">${ico('bucket', 19)}</span><div><strong class="small">Object storage &amp; media</strong><p class="muted xs">Private KYC documents, profile photos, and managed buckets—never VPS system files.</p></div></div>${btn('Explore storage →', 'storageIndex', 'btn-small')}</div></div><div class="section-head"><div><h2 class="section-title">Your projects</h2><div class="sub">A unified home for every service</div></div><button class="link" data-action="go" data-page="projects">View all ${ico('arrow', 14)}</button></div><div class="grid three">${state.projects.slice(0, 3).map(projectCard).join('')}${state.projects.length === 0 ? '<div class="card empty">No projects yet.</div>' : ''}</div><div class="section-head"><h2 class="section-title">Operations</h2></div><div class="grid two-wide"><div class="card"><div class="row space"><h3 class="section-title">Server health</h3>${serverBadge()}</div><p class="muted small">${esc(state.server.name)} · ${esc(state.server.os)}</p>${healthBlock()}<div class="divider"></div><div class="row space"><span class="xs muted">VPS resources</span><span class="xs strong">${serverSpec()}</span></div><p class="hint" style="margin-top:9px">On a 1 GB VPS, build heavy projects off-server; avoid concurrent builds and databases.</p></div><div class="card"><div class="row space"><h3 class="section-title">Recent activity</h3><button class="link" data-action="go" data-page="activity">All activity</button></div>${activityMarkup(state.activities.slice(0, 4))}</div></div>`;
 }
 
 function projectsView(): string {
@@ -592,7 +612,7 @@ function emailView(): string {
 }
 
 function serversView(): string {
-  return `${heading('INFRASTRUCTURE', 'Servers', 'Manage the VPS that powers your projects.', '')}<div class="card" style="margin-bottom:18px"><div class="row space" style="flex-wrap:wrap;gap:18px"><div class="row"><span class="status-icon mint" style="width:45px;height:45px">${ico('server', 24)}</span><div><h3 style="margin:0 0 3px;font-size:17px">${esc(state.server.name)}</h3><div class="muted small">${esc(state.server.os)} · Docker runtime</div></div></div>${badge('Online', 'ok')}</div><div class="divider"></div><div class="grid four"><div><div class="muted xs">CPU</div><div style="font-size:21px;font-weight:730">1 <span class="muted xs">vCPU</span></div></div><div><div class="muted xs">Memory</div><div style="font-size:21px;font-weight:730">1 <span class="muted xs">GB</span></div></div><div><div class="muted xs">Storage</div><div style="font-size:21px;font-weight:730">10 <span class="muted xs">GB</span></div></div><div><div class="muted xs">Agent</div><div style="font-size:18px;font-weight:730;color:var(--mint)">Connected</div></div></div><div class="divider"></div>${healthBlock()}</div><div class="grid two"><div class="card"><div class="row"><span class="status-icon gold">${ico('alert', 18)}</span><h3 class="section-title">Minimum VPS profile</h3></div><p class="muted small">Designed for Ubuntu 20.04+ with a lightweight single-node control plane, but production support and runtime compatibility should be validated per OS release.</p><div class="notice" style="margin-top:14px"><strong>Resource reality check:</strong> A 1 GB / 1 vCPU / 10 GB VPS cannot reliably build and host multiple heavy Next.js apps and databases together. Production builds should use an external builder or a larger machine; enforce quotas and reserve disk space.</div></div><div class="card"><div class="row"><span class="status-icon">${ico('shield', 18)}</span><h3 class="section-title">Protection by default</h3></div><div class="col" style="margin-top:16px;gap:12px">${[['Isolated application workloads', 'Container resource limits'], ['Internal database networking', 'External exposure opt-in only'], ['Control-plane separation', 'No Docker socket for user apps'], ['Agent operations', 'Allowlisted and authenticated']].map(([a, b]) => `<div class="row space"><span class="small">${a}</span><span class="muted xs">${b}</span></div>`).join('')}</div></div></div>`;
+  return `${heading('INFRASTRUCTURE', 'Servers', 'Manage the VPS that powers your projects.', '')}<div class="card" style="margin-bottom:18px"><div class="row space" style="flex-wrap:wrap;gap:18px"><div class="row"><span class="status-icon mint" style="width:45px;height:45px">${ico('server', 24)}</span><div><h3 style="margin:0 0 3px;font-size:17px">${esc(state.server.name)}</h3><div class="muted small">${esc(state.server.os)} · Docker runtime</div></div></div>${badge(state.server.healthy ? 'Online' : 'Degraded', state.server.healthy ? 'ok' : 'warn')}</div>${state.server.uptimeDays ? `<p class="muted xs" style="margin-top:8px">Uptime ${state.server.uptimeDays} days · load ${state.server.cpuLoadPct}% · RAM ${state.server.ramPct}% · disk ${state.server.diskPct}%</p>` : ''}<div class="divider"></div><div class="grid four"><div><div class="muted xs">CPU</div><div style="font-size:21px;font-weight:730">${state.server.cpu} <span class="muted xs">vCPU</span></div></div><div><div class="muted xs">Memory</div><div style="font-size:21px;font-weight:730">${(state.server.ramTotalMb / 1024).toFixed(1)} <span class="muted xs">GB</span></div></div><div><div class="muted xs">Storage</div><div style="font-size:21px;font-weight:730">${state.server.diskTotalGb} <span class="muted xs">GB</span></div></div><div><div class="muted xs">Agent</div><div style="font-size:18px;font-weight:730;color:var(--mint)">Connected</div></div></div><div class="divider"></div>${healthBlock()}</div><div class="grid two"><div class="card"><div class="row"><span class="status-icon gold">${ico('alert', 18)}</span><h3 class="section-title">Minimum VPS profile</h3></div><p class="muted small">Designed for Ubuntu 20.04+ with a lightweight single-node control plane, but production support and runtime compatibility should be validated per OS release.</p><div class="notice" style="margin-top:14px"><strong>Resource reality check:</strong> A 1 GB / 1 vCPU / 10 GB VPS cannot reliably build and host multiple heavy Next.js apps and databases together. Production builds should use an external builder or a larger machine; enforce quotas and reserve disk space.</div></div><div class="card"><div class="row"><span class="status-icon">${ico('shield', 18)}</span><h3 class="section-title">Protection by default</h3></div><div class="col" style="margin-top:16px;gap:12px">${[['Isolated application workloads', 'Container resource limits'], ['Internal database networking', 'External exposure opt-in only'], ['Control-plane separation', 'No Docker socket for user apps'], ['Agent operations', 'Allowlisted and authenticated']].map(([a, b]) => `<div class="row space"><span class="small">${a}</span><span class="muted xs">${b}</span></div>`).join('')}</div></div></div>`;
 }
 
 function activityView(): string {
@@ -887,7 +907,7 @@ function settingsView(): string {
   if (ui.settingsTab === 'security') return lead + tabs +
     `<div class="setting-grid"><div class="card"><h3 class="section-title">Authorization model</h3><div class="divider"></div><p class="muted small">Workspace ownership, per-project membership, scoped service operations, and approval gates for destructive actions.</p><p class="hint">The demo uses one simulated administrator. Real RBAC and multiuser sessions are not implemented.</p></div><div class="card"><h3 class="section-title">Audit trail</h3><div class="divider"></div><p class="muted small">Service actions, domain changes, database grants, and AI plan approvals must be auditable.</p>${btn('View activity & logs', 'go', '', 'data-page="activity"')}</div><div class="card"><div class="row">${ico('terminal', 20)}<h3 class="section-title">Terminal access policy</h3></div><div class="divider"></div><div class="access-list"><div>${badge('Viewer', 'warn')} Application terminal denied</div><div>${badge('Developer', 'blue')} Container-scoped sessions only</div><div>${badge('Admin', 'ok')} Maintenance rights still require separate approval</div><div>${ico('shield', 15)} No terminal from platform API keys</div><div>${ico('shield', 15)} Never grant AI unrestricted shell execution</div></div><p class="hint">The role selector inside the terminal is a demonstration switch, not real authorization.</p></div></div>`;
   if (ui.settingsTab === 'server') return lead + tabs +
-    `<div class="setting-grid"><div class="card"><h3 class="section-title">Registered server</h3><div class="divider"></div><div class="kv"><span class="k">Name</span><span class="v mono">${esc(state.server.name)}</span><span class="k">System</span><span class="v">${esc(state.server.os)}</span><span class="k">Resources</span><span class="v">1 vCPU · 1 GB RAM · 10 GB disk</span></div><div class="divider"></div>${btn('Open server health', 'go', '', 'data-page="servers"')}</div><div class="card"><h3 class="section-title">Lightweight operating mode</h3><p class="muted small">PostgreSQL + pg-boss for platform jobs, Caddy for HTTPS, optional external builds, restricted workload concurrency and disk quotas.</p>${badge('1 GB baseline · design target', 'blue')}<p class="hint">Not benchmarked or validated on a live VPS in this HTML prototype.</p></div><div class="card"><div class="row space"><div class="row">${ico('key', 21)}<h3 class="section-title">Advanced SSH access</h3></div>${badge('Administrator only', 'warn')}</div><p class="muted small" style="margin:11px 0">SSH is for host maintenance and recovery. Cloudlane does not provide a VPS browser terminal, enable SSH, or store private keys.</p><div class="divider"></div><div class="kv"><span class="k">Access method</span><span class="v">External SSH client</span><span class="k">Authentication</span><span class="v">Administrator-managed public key</span><span class="k">Cloudlane API keys</span><span class="v">Never valid for SSH</span></div><p class="muted xs" style="margin:17px 0 7px">Documentation-only example (reserved test IP)</p><div class="row" style="gap:9px;flex-wrap:wrap"><code class="mono" style="background:#08131c;padding:9px 11px;border-radius:7px;overflow-wrap:anywhere">ssh cloudadmin@203.0.113.42</code>${btn(`${ico('copy', 14)} Copy example`, 'copy', 'btn-small', 'data-copy="ssh cloudadmin@203.0.113.42"')}</div><div class="notice" style="margin-top:15px">This address is only an example—not your VPS. Configure SSH through your hosting provider, prefer key-only login, and retain provider console access for recovery.</div></div></div>`;
+    `<div class="setting-grid"><div class="card"><h3 class="section-title">Registered server</h3><div class="divider"></div><div class="kv"><span class="k">Name</span><span class="v mono">${esc(state.server.name)}</span><span class="k">System</span><span class="v">${esc(state.server.os)}</span><span class="k">Resources</span><span class="v">${serverSpec()}</span></div><div class="divider"></div>${btn('Open server health', 'go', '', 'data-page="servers"')}</div><div class="card"><h3 class="section-title">Lightweight operating mode</h3><p class="muted small">PostgreSQL + pg-boss for platform jobs, Caddy for HTTPS, optional external builds, restricted workload concurrency and disk quotas.</p>${badge('1 GB baseline · design target', 'blue')}<p class="hint">Not benchmarked or validated on a live VPS in this HTML prototype.</p></div><div class="card"><div class="row space"><div class="row">${ico('key', 21)}<h3 class="section-title">Advanced SSH access</h3></div>${badge('Administrator only', 'warn')}</div><p class="muted small" style="margin:11px 0">SSH is for host maintenance and recovery. Cloudlane does not provide a VPS browser terminal, enable SSH, or store private keys.</p><div class="divider"></div><div class="kv"><span class="k">Access method</span><span class="v">External SSH client</span><span class="k">Authentication</span><span class="v">Administrator-managed public key</span><span class="k">Cloudlane API keys</span><span class="v">Never valid for SSH</span></div><p class="muted xs" style="margin:17px 0 7px">Documentation-only example (reserved test IP)</p><div class="row" style="gap:9px;flex-wrap:wrap"><code class="mono" style="background:#08131c;padding:9px 11px;border-radius:7px;overflow-wrap:anywhere">ssh cloudadmin@203.0.113.42</code>${btn(`${ico('copy', 14)} Copy example`, 'copy', 'btn-small', 'data-copy="ssh cloudadmin@203.0.113.42"')}</div><div class="notice" style="margin-top:15px">This address is only an example—not your VPS. Configure SSH through your hosting provider, prefer key-only login, and retain provider console access for recovery.</div></div></div>`;
   // preferences
   return lead + tabs + appearancePanel() +
     `<div class="setting-grid"><div class="card"><h3 class="section-title">Design direction</h3><p class="muted small">Simple defaults, progressive disclosure, and contextual actions. Keep Projects, Domains, Databases, Email and Cron Jobs accessible from the main sidebar.</p></div><div class="card"><h3 class="section-title">Planned capabilities</h3><p class="muted small">Project-scoped file manager, stronger recovery automation, multi-server agents, teams and reseller features will be added in phases.</p>${badge('Roadmap · not yet functional', 'blue')}</div></div>`;
@@ -1506,22 +1526,26 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
       const svcId = String(el.dataset.id || '');
       ui.modal = null;
       render();
-      api.get<{ tool: string; action: string; fields: Record<string, string> }>(`/services/${svcId}/db-admin`)
+      api.get<{ tool: string; action: string; openUrl?: string; fields: Record<string, string> }>(`/services/${svcId}/db-admin`)
         .then((link) => {
-          const form = document.createElement('form');
-          form.method = 'POST';
-          form.action = link.action;
-          form.target = '_blank';
-          for (const [k, v] of Object.entries(link.fields)) {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = k;
-            input.value = v;
-            form.appendChild(input);
+          if (link.openUrl) {
+            window.open(link.openUrl, '_blank', 'noopener');
+          } else {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = link.action;
+            form.target = '_blank';
+            for (const [k, v] of Object.entries(link.fields)) {
+              const input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = k;
+              input.value = v;
+              form.appendChild(input);
+            }
+            document.body.appendChild(form);
+            form.submit();
+            form.remove();
           }
-          document.body.appendChild(form);
-          form.submit();
-          form.remove();
           flash(`Connected to ${link.tool}.`);
         })
         .catch((err: unknown) => {
@@ -2231,6 +2255,58 @@ async function handleSubmit(e: Event): Promise<void> {
 }
 
 /* ── render + mount ── */
+/** Snapshot open-modal form fields so background re-renders never wipe typing. */
+function snapshotModalInputs(): Array<Record<string, unknown>> {
+  const modal = document.getElementById('modal');
+  if (!modal) return [];
+  const out: Array<Record<string, unknown>> = [];
+  let focusedKey: string | null = null;
+  let caret: number | null = null;
+  modal.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    'input:not([type=file]), select, textarea',
+  ).forEach((el) => {
+    const key = el.dataset.snapKey
+      ?? (el.dataset.snapKey = `${el.tagName}:${el.name || el.id || ''}:${Array.from(el.parentElement?.children ?? []).indexOf(el)}`);
+    const isText = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+    const sel = isText && el.selectionStart !== null ? [el.selectionStart, el.selectionEnd] : null;
+    if (document.activeElement === el) {
+      focusedKey = key;
+      if (sel) caret = sel[0];
+    }
+    out.push({
+      key,
+      value: el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked : el.value,
+    });
+  });
+  return [{ __focus: focusedKey, __caret: caret }, ...out];
+}
+
+function restoreModalInputs(snap: Array<Record<string, unknown>>): void {
+  if (snap.length < 2) return;
+  const focus = snap[0] as { __focus?: string | null; __caret?: number | null };
+  const modal = document.getElementById('modal');
+  if (!modal) return;
+  modal.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    'input:not([type=file]), select, textarea',
+  ).forEach((el) => {
+    const key = el.dataset.snapKey
+      ?? (el.dataset.snapKey = `${el.tagName}:${el.name || el.id || ''}:${Array.from(el.parentElement?.children ?? []).indexOf(el)}`);
+    const saved = snap.slice(1).find((s) => (s as { key: string }).key === key) as { value: unknown } | undefined;
+    if (!saved) return;
+    if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+      el.checked = Boolean(saved.value);
+    } else if (saved.value !== undefined && el.value !== saved.value) {
+      el.value = String(saved.value);
+    }
+    if (focus.__focus === key && document.activeElement !== el) {
+      el.focus();
+      if (focus.__caret !== null && el instanceof HTMLInputElement && el.type !== 'checkbox') {
+        try { el.setSelectionRange(focus.__caret, focus.__caret); } catch { /* not caret-able */ }
+      }
+    }
+  });
+}
+
 function render(): void {
   const root = document.getElementById('app');
   if (!root) return;
@@ -2238,6 +2314,7 @@ function render(): void {
     root.innerHTML = '<div style="display:grid;place-items:center;min-height:60vh"><p class="muted small">Loading workspace…</p></div>';
     return;
   }
+  const modalSnap = snapshotModalInputs();
   const pageFns: Record<string, () => string> = {
     overview, projects: projectsView, project: projectView, service: serviceView,
     databases: () => servicesIndex('database'), cron: () => servicesIndex('cron'),
@@ -2248,6 +2325,7 @@ function render(): void {
   const page = (pageFns[ui.page as string] || overview)();
   root.innerHTML =
     `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div></main></div>${ui.modal ? modalView() : ''}`;
+  restoreModalInputs(modalSnap);
   renderToast();
   const fab = root.querySelector('.ai-fab') as HTMLElement | null;
   if (!fab) {

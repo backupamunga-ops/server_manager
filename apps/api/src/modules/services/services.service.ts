@@ -4,7 +4,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { createHmac } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma.service.js';
@@ -401,16 +403,6 @@ export class ServicesService {
       });
     }
 
-    const fields = isPg
-      ? {
-          'auth[driver]': 'pgsql',
-          'auth[server]': host,
-          'auth[username]': username,
-          'auth[password]': password,
-          'auth[db]': databaseName,
-        }
-      : { pma_servername: host, pma_username: username, pma_password: password };
-
     await this.audit.record('DB_ADMIN_OPEN', 'success', {
       actorType: 'user',
       actorUserId: userId,
@@ -420,12 +412,49 @@ export class ServicesService {
       metadata: { tool: isPg ? 'pga' : 'pma', host },
     });
 
+    if (isPg) {
+      // Adminer accepts auth fields on POST — the panel submits them.
+      return {
+        tool: 'Adminer · PostgreSQL admin',
+        action: 'https://pga.billucsolutions.co.ke/',
+        openUrl: '',
+        fields: {
+          'auth[driver]': 'pgsql',
+          'auth[server]': host,
+          'auth[username]': username,
+          'auth[password]': password,
+          'auth[db]': databaseName,
+        },
+        database: databaseName,
+        host,
+      };
+    }
+
+    // phpMyAdmin 5.x CSRF-protects its login form, so a cross-origin form POST
+    // cannot log in. Hand a signed one-time URL (60s, single use) to the
+    // signon bridge inside the phpMyAdmin container instead.
+    const secret = this.config.get<string>('PMA_SSO_SECRET');
+    if (!secret) {
+      throw new ServiceUnavailableException({
+        code: 'DB_ADMIN_NOT_CONFIGURED',
+        message: 'Database admin SSO is not configured on this server.',
+      });
+    }
+    const payload = Buffer.from(
+      JSON.stringify({
+        server: host,
+        username,
+        password,
+        exp: Math.floor(Date.now() / 1000) + 60,
+      }),
+    ).toString('base64url');
+    const sig = createHmac('sha256', secret).update(payload).digest('hex');
+
     return {
-      tool: isPg ? 'Adminer · PostgreSQL admin' : 'phpMyAdmin',
-      action: isPg
-        ? 'https://pga.billucsolutions.co.ke/'
-        : 'https://pma.billucsolutions.co.ke/index.php',
-      fields,
+      tool: 'phpMyAdmin',
+      action: '',
+      openUrl: `https://pma.billucsolutions.co.ke/index.php?route=/&t=${payload}.${sig}`,
+      fields: {},
       database: databaseName,
       host,
     };

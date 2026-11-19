@@ -6,6 +6,8 @@
  * deployments, variables) keep their dedicated endpoints; the actions here are
  * the scaffolding layer that the pipeline agents upgrade to full VPS wiring.
  */
+import { readFile, statfs } from 'node:fs/promises';
+import os from 'node:os';
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma.service.js';
@@ -131,6 +133,25 @@ export class WorkspaceService {
     });
 
     const statusMap: Record<string, string> = { STARTING_CANDIDATE: 'STARTING' };
+    // Real host metrics — the panel health card renders these instead of canned values.
+    const cpuCount = Math.max(1, os.cpus().length);
+    const cpuLoadPct = Math.min(100, Math.round((os.loadavg()[0] / cpuCount) * 100));
+    const ramTotalMb = Math.round(os.totalmem() / (1024 * 1024));
+    const ramUsedMb = Math.round((os.totalmem() - os.freemem()) / (1024 * 1024));
+    const ramPct = Math.min(100, Math.round((ramUsedMb / ramTotalMb) * 100));
+    let diskTotalGb = 0;
+    let diskUsedGb = 0;
+    try {
+      const st = await statfs('/');
+      diskTotalGb = +((st.blocks * st.bsize) / 1024 ** 3).toFixed(1);
+      diskUsedGb = +(((st.blocks - st.bavail) * st.bsize) / 1024 ** 3).toFixed(1);
+    } catch { /* fall back to zeros */ }
+    const diskPct = diskTotalGb > 0 ? Math.min(100, Math.round((diskUsedGb / diskTotalGb) * 100)) : 0;
+    let prettyOs = 'Linux';
+    try {
+      prettyOs = (await readFile('/etc/os-release', 'utf-8')).match(/^PRETTY_NAME="?([^"\n]+)"?$/m)?.[1] ?? 'Linux';
+    } catch { /* keep Linux */ }
+    const healthy = cpuLoadPct < 90 && ramPct < 92 && (diskPct === 0 || diskPct < 90);
     const dbUsers = await this.prisma.dbUser.findMany({
       where: { service: { project: { workspaceId: ws.id } } },
       orderBy: { createdAt: 'asc' },
@@ -145,8 +166,12 @@ export class WorkspaceService {
       workspace: ws.name,
       githubConnected: ws.githubConnected,
       server: {
-        id: 'srv_main', name: 'primary-vps', os: 'Ubuntu 24.04 LTS',
-        cpu: 1, ram: 1024, disk: 10, healthy: true,
+        id: 'srv_main', name: os.hostname(), os: prettyOs,
+        cpu: cpuCount, cpuLoadPct,
+        ramTotalMb, ramUsedMb, ramPct,
+        diskTotalGb, diskUsedGb, diskPct,
+        uptimeDays: +(os.uptime() / 86400).toFixed(1),
+        healthy,
       },
       projects: projects.map((p) => ({
         id: p.id, name: p.name, slug: p.slug, created: p.createdAt.toISOString(),
