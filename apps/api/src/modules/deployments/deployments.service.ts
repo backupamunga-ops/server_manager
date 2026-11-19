@@ -55,18 +55,48 @@ export class DeploymentsService {
    * container is live and a port is published.
    */
   private async activatePlatformRoutes(
-    workspaceId: string, serviceId: string, serviceName: string,
+    workspaceId: string, serviceId: string, serviceName: string, deploymentId?: string,
   ): Promise<void> {
     const suffix = this.config.get<string>('PLATFORM_APP_SUFFIX') ?? 'apps.example.test';
     const slug = serviceName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
     if (!slug) return;
     const candidates = [`${slug}.${suffix}`, `${slug}-${serviceId.slice(-4)}.${suffix}`];
+    // Wait until the agent state reflects THIS deployment, so the route always
+    // points at the fresh container (max ~12s; the catch keeps it best-effort).
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const rt = await this.domainsPipeline.serviceRuntime(serviceId);
+        if (!deploymentId || rt.deploymentId === deploymentId) break;
+      } catch { /* ignore */ }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
     for (const host of candidates) {
       const d = await this.prisma.domain.findFirst({ where: { host, workspaceId } });
       if (!d) continue;
       try {
         await this.domainsPipeline.routeFor(host, { id: serviceId, name: serviceName });
       } catch { /* port not published yet — next deployment will retry */ }
+    }
+  }
+
+  /** Stop + remove the containers of superseded deployments of this service. */
+  private async retirePreviousDeployments(serviceId: string, currentDeploymentId: string): Promise<void> {
+    const previous = await this.prisma.deployment.findMany({
+      where: { serviceId, status: 'LIVE', id: { not: currentDeploymentId } },
+      select: { id: true },
+      take: 10,
+    });
+    for (const dep of previous) {
+      await this.prisma.deployment.update({
+        where: { id: dep.id },
+        data: { status: 'SUPERSEDED', finishedAt: new Date() },
+      }).catch(() => {});
+      try {
+        const { execFile } = await import('node:child_process');
+        await new Promise<void>((resolve) => {
+          execFile('docker', ['rm', '-f', `cloudlane-svc-${dep.id}`], { timeout: 30_000 }, () => resolve());
+        });
+      } catch { /* orphan cleanup is best-effort */ }
     }
   }
 
@@ -374,8 +404,10 @@ export class DeploymentsService {
         },
       });
       // Platform hostname routing is only possible once the container publishes
-      // a port, so activate it here rather than at creation time.
-      void this.activatePlatformRoutes(workspaceId, service.id, service.name).catch(() => {});
+      // a port AND the agent state reflects the new deployment — retry so a
+      // redeploy never keeps pointing at the previous deployment's port.
+      void this.activatePlatformRoutes(workspaceId, service.id, service.name, deploymentId).catch(() => {});
+      void this.retirePreviousDeployments(service.id, deploymentId).catch(() => {});
 
       await this.addEvent(
         deploymentId,

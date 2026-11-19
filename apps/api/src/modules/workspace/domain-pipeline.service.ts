@@ -540,6 +540,11 @@ export class DomainPipelineService {
   }
 
   /** serviceId → { deploymentId, port } from the agent's runtime state file. */
+  /** Public accessor for other services (deployments route activation). */
+  async serviceRuntime(serviceId: string): Promise<AgentServiceRuntime> {
+    return this.readServiceRuntime(serviceId);
+  }
+
   private async readServiceRuntime(serviceId: string): Promise<AgentServiceRuntime> {
     try {
       const raw = await readFile(AGENT_STATE_FILE, 'utf-8');
