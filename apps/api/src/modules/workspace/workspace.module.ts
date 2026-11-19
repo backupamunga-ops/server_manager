@@ -7,6 +7,8 @@ import { ServicesModule } from '../services/services.module.js';
 import { DatabasePipelineService } from './database-pipeline.service.js';
 import { DomainPipelineService } from './domain-pipeline.service.js';
 import { AppPipelineService } from './app-pipeline.service.js';
+import { StoragePipelineService } from './storage-pipeline.service.js';
+import { CronRunnerService } from './cron-runner.service.js';
 import { WorkspaceController } from './workspace.controller.js';
 import { WorkspaceService } from './workspace.service.js';
 
