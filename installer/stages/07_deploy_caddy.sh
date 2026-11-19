@@ -65,7 +65,7 @@ fi
 
 cat > /etc/caddy/Caddyfile <<EOF
 {
-  admin off
+  admin 127.0.0.1:2019
   auto_https disable_certs
   persist_config /var/lib/cloudlane/caddy/
 }

@@ -17,6 +17,7 @@ const config = {
       $api: 'src/lib/api',
       $stores: 'src/lib/stores',
       $design: 'src/lib/design',
+      $features: 'src/lib/features',
     },
   },
 };

@@ -16,6 +16,8 @@
       "**/coverage/**",
       "**/*.generated.ts",
       "**/*.svelte",
+      "**/*.css",
+      "**/*.timestamp-*",
       "apps/api/src/prisma/migrations/**"
     ]
   },

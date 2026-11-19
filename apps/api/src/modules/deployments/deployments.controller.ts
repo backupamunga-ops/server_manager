@@ -18,6 +18,11 @@ class RollbackDto {
 export class DeploymentsController {
   constructor(private readonly deployments: DeploymentsService) {}
 
+  @Post('deployments')
+  async redeploy(@Param('serviceId') serviceId: string, @CurrentUser() user: SessionInfo) {
+    return await this.deployments.redeploy(user.userId, serviceId);
+  }
+
   @Get('deployments')
   async list(@Param('serviceId') serviceId: string, @CurrentUser() user: SessionInfo) {
     return { items: await this.deployments.listForService(user.userId, serviceId) };

@@ -46,6 +46,58 @@ export class DeploymentsService {
     mkdir(DEPLOYMENTS_DIR, { recursive: true }).catch(() => {});
   }
 
+  /**
+   * Trigger a fresh deployment for an existing service (Redeploy).
+   * Reuses the stored source (ZIP file or GitHub repo) — build plan §11.1/§11.2
+   * with the same stage machine as the initial deploy.
+   */
+  async redeploy(
+    userId: string,
+    serviceId: string,
+  ): Promise<{ serviceId: string; deploymentId: string }> {
+    const service = await this.prisma.service.findUnique({
+      where: { id: serviceId },
+      include: { project: { include: { workspace: true } }, zipSource: true, githubLink: true },
+    });
+    if (!service || service.project.workspace.ownerId !== userId) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Service not found.' });
+    }
+    if (service.source === 'zip' && !service.zipSource) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Service has no stored ZIP source.',
+      });
+    }
+    if (service.source === 'github' && !service.githubLink) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Service has no GitHub source.' });
+    }
+
+    const deploymentId = uuidv4();
+    await this.prisma.deployment.create({
+      data: {
+        id: deploymentId,
+        serviceId,
+        status: 'REQUESTED',
+        stage: 0,
+        revision: `${service.source}-${Date.now().toString(36)}`,
+      },
+    });
+    await this.prisma.service.update({
+      where: { id: serviceId },
+      data: { desiredState: 'deploying', observedState: 'deploying', observedAt: new Date() },
+    });
+    await this.queueDeployment(deploymentId);
+    await this.audit.record('DEPLOYMENT_STARTED', 'success', {
+      actorType: 'user',
+      actorUserId: userId,
+      workspaceId: service.project.workspaceId,
+      resourceType: 'deployment',
+      resourceId: deploymentId,
+      metadata: { serviceId, trigger: 'redeploy' },
+    });
+    return { serviceId, deploymentId };
+  }
+
   async listForService(userId: string, serviceId: string) {
     const service = await this.prisma.service.findUnique({
       where: { id: serviceId },

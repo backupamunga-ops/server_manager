@@ -1,8 +1,22 @@
 {
+  "dependencies": {
+    "@cloudlane/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.27.1",
+    "@sveltejs/vite-plugin-svelte": "^4.0.2",
+    "@types/node": "22.9.0",
+    "svelte": "^5.39.5",
+    "svelte-check": "4.0.7",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vitest": "2.1.5",
+    "@fontsource/inter": "5.2.8",
+    "@fontsource/jetbrains-mono": "5.2.8"
+  },
   "name": "@cloudlane/dashboard",
-  "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -12,18 +26,6 @@
     "clean": "rm -rf .svelte-kit dist build",
     "prepare": "svelte-kit sync || true"
   },
-  "devDependencies": {
-    "@sveltejs/adapter-static": "3.0.6",
-    "@sveltejs/kit": "2.8.1",
-    "@sveltejs/vite-plugin-svelte": "4.0.0",
-    "@types/node": "22.9.0",
-    "svelte": "5.1.16",
-    "svelte-check": "4.0.7",
-    "typescript": "5.6.3",
-    "vite": "5.4.11",
-    "vitest": "2.1.5"
-  },
-  "dependencies": {
-    "@cloudlane/contracts": "workspace:*"
-  }
+  "type": "module",
+  "version": "0.1.0"
 }
