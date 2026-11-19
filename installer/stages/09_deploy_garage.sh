@@ -31,14 +31,17 @@ cat > /etc/cloudlane/garage/config.toml <<EOF
 metadata_dir = "/var/lib/garage/meta"
 data_dir = "/var/lib/garage/data"
 db_engine = "lmdb"
+replication_factor = 1
+rpc_bind_addr = "[::]:3901"
+rpc_secret = "$(openssl rand -hex 32)"
 
-[api]
-s3_bind_addr = "0.0.0.0:3900"
+[s3_api]
 s3_region = "garage"
-s3_api_root_domain = ".s3.garage"
+api_bind_addr = "0.0.0.0:3900"
 
 [admin]
-admin_bind_addr = "0.0.0.0:3902"
+api_bind_addr = "0.0.0.0:3902"
+admin_token = "$GARAGE_ADMIN_TOKEN"
 admin_metrics_token = "$GARAGE_ADMIN_TOKEN"
 EOF
 chmod 640 /etc/cloudlane/garage/config.toml
