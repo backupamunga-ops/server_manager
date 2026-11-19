@@ -15,6 +15,7 @@
       "**/node_modules/**",
       "**/coverage/**",
       "**/*.generated.ts",
+      "**/*.svelte",
       "apps/api/src/prisma/migrations/**"
     ]
   },

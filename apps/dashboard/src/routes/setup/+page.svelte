@@ -3,12 +3,12 @@ import { api } from '$lib/api/client';
 import { installationStatus } from '$lib/stores/session';
 import { onMount } from 'svelte';
 
-const claimCode = '';
-const email = '';
-const password = '';
-const workspaceName = '';
+let claimCode = '';
+let email = '';
+let password = '';
+let workspaceName = '';
 let mfaSecret = '';
-const mfaCode = '';
+let mfaCode = '';
 let otpauthUrl = '';
 let claimToken = '';
 let factorId = '';

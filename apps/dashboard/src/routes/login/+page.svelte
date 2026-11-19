@@ -2,9 +2,9 @@
 import { api } from '$lib/api/client';
 import { onMount } from 'svelte';
 
-const email = '';
-const password = '';
-const mfaCode = '';
+let email = '';
+let password = '';
+let mfaCode = '';
 let mfaChallengeId = '';
 let step: 'credentials' | 'mfa' = 'credentials';
 let error: string | null = null;
