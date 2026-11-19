@@ -200,6 +200,17 @@ export class DatabasePipelineService {
     };
   }
 
+  /** True when a container with this exact name exists (any state). */
+  async containerExists(name: string): Promise<boolean> {
+    const out = (
+      await this.docker(
+        ['ps', '-a', '--filter', `name=^/${name}$`, '--format', '{{.Names}}'],
+        { failLabel: 'Could not list containers on this server' },
+      )
+    ).trim();
+    return out.length > 0;
+  }
+
   /**
    * Create a real SQL user inside the container. Generates the password when
    * none is supplied; returns the plaintext for the caller to encrypt.

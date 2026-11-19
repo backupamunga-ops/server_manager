@@ -241,6 +241,7 @@ export interface CreateVariableRequest {
 // ============ Audit & Operations ============
 
 export type AuditAction =
+  | 'DB_ADMIN_OPEN'
   | 'CLAIM_ISSUED'
   | 'CLAIM_VERIFIED'
   | 'CLAIM_FAILED'

@@ -349,6 +349,7 @@ model PersistentVolume {
 // ============ Audit & Operations ============
 
 enum AuditAction {
+  DB_ADMIN_OPEN
   CLAIM_ISSUED
   CLAIM_VERIFIED
   CLAIM_FAILED

@@ -102,6 +102,11 @@ export class ServiceDetailController {
     return await this.services.getForOwner(user.userId, serviceId);
   }
 
+  @Get('db-admin')
+  async dbAdminLink(@Param('serviceId') serviceId: string, @CurrentUser() user: SessionInfo) {
+    return await this.services.dbAdminLink(user.userId, serviceId);
+  }
+
   @Get('variables')
   async listVariables(@Param('serviceId') serviceId: string, @CurrentUser() user: SessionInfo) {
     return { items: await this.services.listVariables(user.userId, serviceId) };

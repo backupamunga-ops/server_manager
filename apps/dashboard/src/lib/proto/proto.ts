@@ -223,8 +223,10 @@ const deploymentsFor = (id: unknown) => state.deployments
   .filter((d) => d.serviceId === id)
   .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
 const domainsFor = (id: unknown) => state.domains.filter((d) => d.serviceId === id);
-const primaryDomain = (id: unknown) => domainsFor(id).find((d) => d.type === 'custom' && d.status === 'active')?.name
-  || domainsFor(id).find((d) => d.status === 'active')?.name || 'Not configured';
+const isVisualApp = (s: { kind: string; role: string; framework?: string }) =>
+  s.kind === 'application' && (s.role === 'static' || s.role === 'web' || /static|html|front|site/i.test(s.framework || ''));
+const primaryDomain = (id: unknown) => domainsFor(id).find((d) => d.type === 'custom' && (d.status === 'active' || d.status === 'VERIFIED'))?.name
+  || domainsFor(id).find((d) => d.status === 'active' || d.status === 'VERIFIED')?.name || 'Not configured';
 const age = (d?: string | null) => {
   if (!d) return '—';
   const s = Math.max(0, (Date.now() - new Date(d).getTime()) / 1000);
@@ -623,7 +625,7 @@ function applicationService(s: ServiceRec): string {
   if (ui.tab === 'artifacts') return appArtifactsView(s);
   if (ui.tab === 'volumes') return appVolumesView(s);
   if (ui.tab === 'overview')
-    return `<div class="grid two-wide"><div class="col" style="gap:17px"><div class="card"><div class="row space"><h3 class="section-title">Live application</h3>${statusBadge(s.status)}</div><p class="muted small">Production deployment endpoint</p><div class="callout"><div class="row space"><div class="col"><span class="muted xs">Public URL</span><span class="mono" style="font-size:13px;color:var(--mint);overflow-wrap:anywhere">https://${esc(primaryDomain(s.id))}</span></div>${btn(`${ico('copy', 14)} Copy`, 'copy', 'btn-small', `data-copy="https://${attr(primaryDomain(s.id))}"`)}</div></div><div class="divider"></div><div class="grid two"><div class="kv"><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${cap(s.role)}</span></div><div class="kv"><span class="k">Environment</span><span class="v">production</span><span class="k">Runtime</span><span class="v">Docker</span></div></div></div><div class="card"><div class="row space"><h3 class="section-title">Latest deployment</h3><button class="link" data-action="serviceTab" data-tab="deployments">Deployment history</button></div>${d ? `<div class="row space" style="margin-top:17px"><div><div class="row">${statusBadge(d.status)}<span class="mono muted xs">${esc(d.revision)}</span></div><p class="muted xs">Started ${age(d.created)}</p></div>${btn('View logs', 'serviceTab', 'btn-small', 'data-tab="logs"')}</div>${d.status !== 'LIVE' && d.status !== 'FAILED' ? `<div class="progress skeleton"><span style="width:${Math.max(8, Number(d.stage) * 12)}%"></span></div>` : ''}` : '<p class="muted small">No deployment yet</p>'}</div></div></div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Source control</h3><div class="divider"></div><div class="row"><span class="status-icon">${ico(s.source === 'github' ? 'github' : 'archive', 17)}</span><div><div class="strong small">${esc(s.source === 'github' ? s.repo : s.fileName || 'Uploaded archive')}</div><div class="muted xs">${s.source === 'github' ? `Branch ${esc(s.branch || 'main')}` : 'Local ZIP source'}</div></div></div>${s.source === 'github' ? `<div class="divider"></div><div class="row space"><span class="muted xs">Automatic deploy</span>${badge(s.autoDeploy ? 'Enabled' : 'Disabled', s.autoDeploy ? 'ok' : 'warn')}</div><div style="margin-top:12px">${btn(`${ico('branch', 14)} Simulate new commit`, 'simulatePush', 'btn-small', `data-id="${s.id}"`)}</div>` : ''}</div><div class="card"><h3 class="section-title">Health &amp; networking</h3><div class="divider"></div><div class="row space"><span class="muted small">Health check</span>${statusBadge(s.status === 'running' ? 'healthy' : s.status)}</div><div class="row space" style="margin-top:11px"><span class="muted small">Domains</span><strong class="small">${domainsFor(s.id).length}</strong></div><div class="row space" style="margin-top:11px"><span class="muted small">Build strategy</span><strong class="small">Auto-detected</strong></div></div></div></div>`;
+    return `<div class="grid two-wide"><div class="col" style="gap:17px"><div class="card"><div class="row space"><h3 class="section-title">Live application</h3>${statusBadge(s.status)}</div><p class="muted small">Production deployment endpoint</p><div class="callout"><div class="row space"><div class="col"><span class="muted xs">Public URL</span><span class="mono" style="font-size:13px;color:var(--mint);overflow-wrap:anywhere">https://${esc(primaryDomain(s.id))}</span></div>${btn(`${ico('copy', 14)} Copy`, 'copy', 'btn-small', `data-copy="https://${attr(primaryDomain(s.id))}"`)}</div></div><div class="divider"></div><div class="grid two"><div class="kv"><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${cap(s.role)}</span></div><div class="kv"><span class="k">Environment</span><span class="v">production</span><span class="k">Runtime</span><span class="v">Docker</span></div></div></div><div class="card"><div class="row space"><h3 class="section-title">Live preview</h3>${primaryDomain(s.id) !== 'Not configured' ? btn('Open in new tab', 'openExternal', 'btn-small', `data-url="https://${attr(primaryDomain(s.id))}"`) : ''}</div>${isVisualApp(s) ? `<div style="margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;height:280px;background:#0b1518"><iframe src="https://${attr(primaryDomain(s.id))}" loading="lazy" sandbox="allow-scripts" style="width:1440px;height:875px;border:0;transform:scale(0.33);transform-origin:0 0;pointer-events:none" title="Live preview"></iframe></div><p class="hint">Live view of the production URL. Use Open in new tab for the full app.</p>` : `<div style="margin-top:12px;border:1px dashed var(--border);border-radius:10px;height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted)">${ico('terminal', 24)}<span class="small">Backend service — no visual preview</span></div>`}</div><div class="card"><div class="row space"><h3 class="section-title">Latest deployment</h3><button class="link" data-action="serviceTab" data-tab="deployments">Deployment history</button></div>${d ? `<div class="row space" style="margin-top:17px"><div><div class="row">${statusBadge(d.status)}<span class="mono muted xs">${esc(d.revision)}</span></div><p class="muted xs">Started ${age(d.created)}</p></div>${btn('View logs', 'serviceTab', 'btn-small', 'data-tab="logs"')}</div>${d.status !== 'LIVE' && d.status !== 'FAILED' ? `<div class="progress skeleton"><span style="width:${Math.max(8, Number(d.stage) * 12)}%"></span></div>` : ''}` : '<p class="muted small">No deployment yet</p>'}</div></div></div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Source control</h3><div class="divider"></div><div class="row"><span class="status-icon">${ico(s.source === 'github' ? 'github' : 'archive', 17)}</span><div><div class="strong small">${esc(s.source === 'github' ? s.repo : s.fileName || 'Uploaded archive')}</div><div class="muted xs">${s.source === 'github' ? `Branch ${esc(s.branch || 'main')}` : 'Local ZIP source'}</div></div></div>${s.source === 'github' ? `<div class="divider"></div><div class="row space"><span class="muted xs">Automatic deploy</span>${badge(s.autoDeploy ? 'Enabled' : 'Disabled', s.autoDeploy ? 'ok' : 'warn')}</div><div style="margin-top:12px">${btn(`${ico('branch', 14)} Simulate new commit`, 'simulatePush', 'btn-small', `data-id="${s.id}"`)}</div>` : ''}</div><div class="card"><h3 class="section-title">Health &amp; networking</h3><div class="divider"></div><div class="row space"><span class="muted small">Health check</span>${statusBadge(s.status === 'running' ? 'healthy' : s.status)}</div><div class="row space" style="margin-top:11px"><span class="muted small">Domains</span><strong class="small">${domainsFor(s.id).length}</strong></div><div class="row space" style="margin-top:11px"><span class="muted small">Build strategy</span><strong class="small">Auto-detected</strong></div></div></div></div>`;
   if (ui.tab === 'deployments')
     return `<div class="row space" style="margin-bottom:16px"><h3 class="section-title">Deployment history</h3>${btn(`${ico('refresh', 14)} Redeploy`, 'redeploy', '', `data-id="${s.id}"`)}</div><div class="card table-frame"><div class="table-wrap"><table class="table"><thead><tr><th>Release</th><th>Revision</th><th>Started</th><th>Status</th><th>Actions</th></tr></thead><tbody>${ds.map((d) => `<tr><td class="mono main-cell">${esc(d.id)}</td><td class="mono">${esc(d.revision)}</td><td>${date(d.created)}</td><td>${statusBadge(d.status)}</td><td><div class="row">${btn('Logs', 'openLogs', 'btn-small', `data-id="${d.id}"`)}${d.status === 'LIVE' && d.id !== s.activeDeployment ? btn('Rollback', 'rollback', 'btn-small', `data-id="${d.id}"`) : ''}</div></td></tr>`).join('')}</tbody></table></div></div><p class="hint">Rollback reactivates a retained successful release.</p>`;
   if (ui.tab === 'logs') {
@@ -928,7 +930,7 @@ function modalView(): string {
     demoInbox: ['Demo webmail', 'Preview a sample inbox without sending or receiving real mail.'],
     variable: ['Add environment variable', 'Secure configuration belongs to an individual service.'],
     dbAccess: ['Database network access', 'Restrict which external addresses can connect.'],
-    dbAdmin: ['Database administration', 'Explore an administration preview for this database.'],
+    dbAdmin: ['Database administration', 'Open the admin tool signed in as the database user.'],
     dbUserAdd: ['Add database user', 'Create a dedicated user with scoped privileges.'],
     dbUserManage: ['Manage database user', 'Account details and access controls.'],
     dbUserPrivileges: ['User privileges', 'Choose what this database user is allowed to do.'],
@@ -1044,9 +1046,9 @@ function modalView(): string {
   }
   if (type === 'dbAdmin') {
     const db = service(ui.modalData.serviceId as string);
-    const tool = db?.engine === 'PostgreSQL' ? 'pgAdmin' : 'phpMyAdmin';
+    const tool = db?.engine === 'PostgreSQL' ? 'Adminer · PostgreSQL admin' : 'phpMyAdmin';
     html = db ?
-      `<div class="soft-banner" style="margin-bottom:16px">${ico('database', 21)}<div><strong>${esc(tool)} · demo preview</strong><p>${esc(db.engine)} / ${esc(db.database)} · actual admin tool is not running in this prototype.</p></div></div><div class="card"><h3 class="section-title">Database explorer</h3><div class="divider"></div><div class="row space"><span class="mono small">${esc(db.database)}</span>${badge('Connected (demo)', 'ok')}</div><div class="divider"></div>${['Tables', 'SQL editor', 'Import / Export', 'User accounts'].map((t) => `<div class="host-row"><span class="small">${esc(t)}</span>${badge('Preview only', 'blue')}</div>`).join('')}</div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Close', 'closeModal')}</div>` :
+      `<div class="soft-banner" style="margin-bottom:16px">${ico('database', 21)}<div><strong>${esc(tool)}</strong><p>Opens in a new tab already signed in as the database application user — no password re-entry. Direct login with credentials is still available on the tool's own page.</p></div></div><div class="card"><div class="row space"><h3 class="section-title">${esc(db.name)} · ${esc(db.engine || '')}</h3>${badge('Auto sign-in', 'ok')}</div><p class="muted small" style="margin-top:8px">The connection goes through the platform's internal network with the application credential from the encrypted secret store. The credential is fetched only when you click Open and is never embedded in the page.</p></div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Cancel', 'closeModal')}<button class="btn btn-primary" data-action="dbAdminGo" data-id="${db.id}">${ico('external', 14)} Open admin tool</button></div>` :
       '';
   }
   if (type === 'dbUserAdd') {
@@ -1497,6 +1499,36 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
     case 'copy':
       void copyText(el.dataset.copy || '');
       break;
+    case 'openExternal':
+      window.open(el.dataset.url || '', '_blank', 'noopener');
+      break;
+    case 'dbAdminGo': {
+      const svcId = String(el.dataset.id || '');
+      ui.modal = null;
+      render();
+      api.get<{ tool: string; action: string; fields: Record<string, string> }>(`/services/${svcId}/db-admin`)
+        .then((link) => {
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = link.action;
+          form.target = '_blank';
+          for (const [k, v] of Object.entries(link.fields)) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = k;
+            input.value = v;
+            form.appendChild(input);
+          }
+          document.body.appendChild(form);
+          form.submit();
+          form.remove();
+          flash(`Connected to ${link.tool}.`);
+        })
+        .catch((err: unknown) => {
+          flash(err instanceof ApiError ? err.message : 'Could not open the database admin tool.', true);
+        });
+      break;
+    }
     case 'redeploy': {
       const s = service(id);
       if (!s) break;

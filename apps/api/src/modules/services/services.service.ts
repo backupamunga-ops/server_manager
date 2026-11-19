@@ -13,6 +13,7 @@ import { DeploymentsService } from '../deployments/deployments.service.js';
 import { SecretsService } from '../secrets/secrets.service.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 import { DomainPipelineService } from '../workspace/domain-pipeline.service.js';
+import { DatabasePipelineService, DB_APP_USERNAME } from '../workspace/database-pipeline.service.js';
 
 const serviceNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 
@@ -27,6 +28,7 @@ export class ServicesService {
     private readonly uploads: UploadsService,
     private readonly secrets: SecretsService,
     private readonly domains: DomainPipelineService,
+    private readonly databases: DatabasePipelineService,
     private readonly config: ConfigService,
   ) {}
 
@@ -365,6 +367,68 @@ export class ServicesService {
       value: this.secrets.decrypt(v.encryptedValue),
       updatedAt: v.updatedAt.toISOString(),
     }));
+  }
+
+
+  /** Single-sign-on hand-off to phpMyAdmin / Adminer(pga) for a database service. */
+  async dbAdminLink(userId: string, serviceId: string) {
+    const s = await this.requireOwnedService(userId, serviceId);
+    if (s.kind !== 'database') {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Database admin tools only apply to database services.',
+      });
+    }
+    const engine = s.engine || s.framework || 'PostgreSQL';
+    const isPg = engine === 'PostgreSQL';
+    let databaseName = s.databaseName || s.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    let host = `cl-${databaseName}`;
+    let username = DB_APP_USERNAME;
+    let password = s.passwordCipher ? this.secrets.decrypt(s.passwordCipher) : '';
+
+    // Databases registered while provisioning was unavailable have no container
+    // and no usable credential — run the container now and persist fresh creds.
+    const usable = password !== '' && (await this.databases.containerExists(host).catch(() => false));
+    if (!usable) {
+      const prov = await this.databases.provision(engine, databaseName, s.name);
+      host = prov.containerName;
+      databaseName = prov.databaseName;
+      username = prov.appUsername;
+      password = prov.appPassword;
+      await this.prisma.service.update({
+        where: { id: s.id },
+        data: { passwordCipher: this.secrets.encrypt(prov.appPassword) },
+      });
+    }
+
+    const fields = isPg
+      ? {
+          'auth[driver]': 'pgsql',
+          'auth[server]': host,
+          'auth[username]': username,
+          'auth[password]': password,
+          'auth[db]': databaseName,
+        }
+      : { pma_servername: host, pma_username: username, pma_password: password };
+
+    await this.audit.record('DB_ADMIN_OPEN', 'success', {
+      actorType: 'user',
+      actorUserId: userId,
+      workspaceId: s.project.workspaceId,
+      resourceType: 'service',
+      resourceId: s.id,
+      metadata: { tool: isPg ? 'pga' : 'pma', host },
+    });
+
+    return {
+      tool: isPg ? 'Adminer · PostgreSQL admin' : 'phpMyAdmin',
+      action: isPg
+        ? 'https://pga.billucsolutions.co.ke/'
+        : 'https://pma.billucsolutions.co.ke/index.php',
+      fields,
+      database: databaseName,
+      host,
+    };
   }
 
   /** Create or update one environment variable (owner only, step-up required). */
