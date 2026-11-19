@@ -53,8 +53,14 @@ if [[ -n "$PUBLIC_IP6" && "$PUBLIC_IP6" != "$PUBLIC_IP4" ]]; then
   log_ok "Public IPv6: $PUBLIC_IP6"
 fi
 
-# Render initial Caddyfile (internal cert, no ACME yet)
-log_info "Rendering initial Caddyfile (internal cert)..."
+# Render initial Caddyfile.
+# Panel TLS: trusted Let's Encrypt short-lived IP certificate (build plan §8.1
+# "Panel: HTTPS on public IP (short-lived IP certificate)"). Requires Caddy
+# >= 2.10 and outbound egress to the ACME directory; Let's Encrypt issues IP
+# identifiers only under the shortlived profile, so it is set explicitly.
+# If ACME is unreachable the panel falls back to retrying; to serve a local
+# internal certificate instead, replace the tls block with `tls internal`.
+log_info "Rendering Caddyfile (trusted short-lived IP certificate via ACME)..."
 mkdir -p /etc/caddy /etc/caddy/services
 
 if [[ -n "$PUBLIC_IP6" && "$PUBLIC_IP6" != "$PUBLIC_IP4" ]]; then
@@ -66,12 +72,14 @@ fi
 cat > /etc/caddy/Caddyfile <<EOF
 {
   admin 127.0.0.1:2019
-  auto_https disable_certs
-  persist_config /var/lib/cloudlane/caddy/
 }
 
 https://$IP_BLOCK {
-  tls internal
+  tls {
+    issuer acme {
+      profile shortlived
+    }
+  }
 
   handle /api/v1/* {
     reverse_proxy localhost:3000

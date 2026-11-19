@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { api } from '$api/client';
+  import { api, ApiError } from '$api/client';
   import { palette, dark } from '$stores/prefs';
 
   /**
@@ -13,17 +13,27 @@
   onMount(async () => {
     try {
       const status = await api.installation.status();
-      if (status.status === 'unclaimed') {
+      if (status.status === 'unclaimed' || status.status === 'claimed') {
         await goto('/setup', { replaceState: true });
         return;
       }
-      const session = await api.auth.session();
-      if (session && session.userId) {
-        await goto('/overview', { replaceState: true });
-        return;
+      try {
+        const session = await api.auth.session();
+        if (session && session.userId) {
+          await goto('/overview', { replaceState: true });
+          return;
+        }
+        await goto('/login', { replaceState: true });
+      } catch (err) {
+        // 401 = simply not signed in — that is the normal logged-out path.
+        if (err instanceof ApiError && err.status === 401) {
+          await goto('/login', { replaceState: true });
+          return;
+        }
+        throw err;
       }
-      await goto('/login', { replaceState: true });
     } catch {
+      // Network-level failure (API down, 5xx, transport error).
       error = true;
     }
   });
