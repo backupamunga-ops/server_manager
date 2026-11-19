@@ -1320,7 +1320,9 @@ async function deployFromZip(data: Record<string, string | boolean>): Promise<vo
     });
     const buf = await file.arrayBuffer();
     const hash = await sha256Hex(buf);
-    await api.putRaw(`/uploads/${init.uploadId}/receive?sha256=${encodeURIComponent(hash)}`, buf);
+    const form = new FormData();
+    form.append('file', new Blob([buf], { type: 'application/zip' }), file.name);
+    await api.putForm(`/uploads/${init.uploadId}/receive?sha256=${encodeURIComponent(hash)}`, form);
     await api.post(`/uploads/${init.uploadId}/finalize`, { sha256: hash });
     const created = await api.post<{ serviceId: string; deploymentId: string }>(`/projects/${projectId}/services`, {
       name, role, source: 'zip', uploadId: init.uploadId, framework,
