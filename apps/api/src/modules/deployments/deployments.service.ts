@@ -6,7 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../common/prisma.service.js';
 import { extractTarGzSafe } from '../../common/targz.js';
 import { extractZipSafe } from '../../common/zip.js';
+import { ConfigService } from '@nestjs/config';
 import { AgentService } from '../agent/agent.service.js';
+import { DomainPipelineService } from '../workspace/domain-pipeline.service.js';
 import { AuditService } from '../audit/audit.service.js';
 
 const DEPLOYMENTS_DIR = '/var/lib/cloudlane/deployments';
@@ -42,8 +44,30 @@ export class DeploymentsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly agent: AgentService,
+    private readonly domainsPipeline: DomainPipelineService,
+    private readonly config: ConfigService,
   ) {
     mkdir(DEPLOYMENTS_DIR, { recursive: true }).catch(() => {});
+  }
+
+  /**
+   * Activate Caddy hostname routes for the service's platform URLs now that a
+   * container is live and a port is published.
+   */
+  private async activatePlatformRoutes(
+    workspaceId: string, serviceId: string, serviceName: string,
+  ): Promise<void> {
+    const suffix = this.config.get<string>('PLATFORM_APP_SUFFIX') ?? 'apps.example.test';
+    const slug = serviceName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) return;
+    const candidates = [`${slug}.${suffix}`, `${slug}-${serviceId.slice(-4)}.${suffix}`];
+    for (const host of candidates) {
+      const d = await this.prisma.domain.findFirst({ where: { host, workspaceId } });
+      if (!d) continue;
+      try {
+        await this.domainsPipeline.routeFor(host, { id: serviceId, name: serviceName });
+      } catch { /* port not published yet — next deployment will retry */ }
+    }
   }
 
   /**
@@ -349,6 +373,9 @@ export class DeploymentsService {
           observedAt: new Date(),
         },
       });
+      // Platform hostname routing is only possible once the container publishes
+      // a port, so activate it here rather than at creation time.
+      void this.activatePlatformRoutes(workspaceId, service.id, service.name).catch(() => {});
 
       await this.addEvent(
         deploymentId,
