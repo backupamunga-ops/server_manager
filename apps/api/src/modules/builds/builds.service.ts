@@ -308,7 +308,8 @@ export class BuildsService {
     // Classify by kind and output markers
     const names = await this.listNames(srcDir, '');
     const outDir = this.pickStaticOutput(srcDir, names);
-    const hasNextBuildId = names.some((n) => n === '.next/build_id');
+    // .next/ is in the ignore list, so probe the filesystem directly
+    const hasNextBuildId = await this.exists(join(srcDir, '.next', 'BUILD_ID'));
     const hasSvelteNodeServer = names.some((n) => n === 'build/index.js');
 
     if (info.kind === 'build-static') {
@@ -385,6 +386,15 @@ export class BuildsService {
     const angular = names.find((n) => /^dist\/[^/]+\/browser\/index\.html$/.test(n));
     if (angular) return join(srcDir, 'dist', angular.split('/')[1], 'browser');
     return null;
+  }
+
+  private async exists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async hasServerEntry(info: FrameworkInfo): Promise<boolean> {

@@ -233,7 +233,17 @@ export class DeploymentsService {
    * extract static artifact → start candidate container via agent → health
    * check → atomic Caddy route activation via agent → LIVE.
    */
+  /** Global deployment queue — the VPS runs one pipeline at a time (port
+   * allocation and builds are not race-safe under concurrency). */
+  private deployChain: Promise<void> = Promise.resolve();
+
   private async processDeployment(deploymentId: string): Promise<void> {
+    const task = this.deployChain.then(() => this.runDeployment(deploymentId));
+    this.deployChain = task.catch(() => undefined);
+    return task;
+  }
+
+  private async runDeployment(deploymentId: string): Promise<void> {
     let serviceId = '';
     try {
       const deployment = await this.prisma.deployment.findUnique({
