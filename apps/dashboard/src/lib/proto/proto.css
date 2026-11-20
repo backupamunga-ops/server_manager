@@ -502,3 +502,38 @@ option{background:var(--overlay);color:var(--text)}
 @media(prefers-reduced-motion:reduce){.project-card:hover .project-open{transform:none}}
 
 @keyframes clspin{to{transform:rotate(360deg)}}.spin{width:12px;height:12px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:-2px;animation:clspin .7s linear infinite}
+/* Drevanta service overview — ported from the approved prototype (drevanta-project-overview.html) */
+.ov-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:18px;align-items:stretch}
+.ov-left{display:flex;flex-direction:column;gap:18px;min-width:0}
+.ov-card{padding:25px;display:flex;flex-direction:column;min-width:0}
+.ov-head{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.ov-note{color:var(--muted);font-size:12px;margin:7px 0 0}
+.ov-endpoint{margin-top:22px;min-width:0}
+.ov-overline{font-size:10.5px;color:var(--muted);font-weight:600;margin-bottom:8px}
+.ov-endpoint-inline{display:flex;align-items:center;gap:10px;min-width:0}
+.ov-url{display:block;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border:1px solid var(--border2);background:var(--panel2);border-radius:7px;padding:8px 11px;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;color:var(--mint);font-weight:600;font-size:11.5px;line-height:1.3}
+a.ov-url:hover{text-decoration:underline}
+.ov-copy{flex:none}
+.ov-rows{border-top:1px solid var(--border);margin-top:17px;padding-top:13px;display:grid;gap:13px}
+.ov-row{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:11.5px;min-width:0}
+.ov-row .k{color:var(--muted)}
+.ov-row strong{font-weight:680;text-align:right}
+.ov-row-link{border:0;background:transparent;padding:0;font:inherit;text-align:left;color:inherit;cursor:pointer}
+.ov-row-link:hover{color:var(--mint);text-decoration:underline;text-underline-offset:3px}
+.ov-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;white-space:nowrap}
+.ov-actions strong{font-size:11.5px}
+.ov-vline{height:13px;width:1px;background:var(--border2);flex:none}
+.ov-row-action{border:0;padding:0;background:transparent;font-size:11px;font-weight:700;color:var(--mint);white-space:nowrap}
+.ov-row-action:hover{text-decoration:underline;text-underline-offset:3px}
+.ov-preview{padding:25px;min-height:0;display:flex;flex-direction:column}
+#preview-scale-box{position:relative;flex:1 1 0;min-height:280px;border-radius:9px;overflow:hidden;background:var(--panel2);border:1px solid var(--border);margin-top:20px}
+#preview-scale-box iframe{position:absolute;top:0;left:0}
+.ov-caption{font-size:11px;color:var(--muted);padding-top:13px;margin:0}
+.ov-fallback{margin-top:20px;border:1px dashed var(--border);border-radius:9px;height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted);flex:1 1 0}
+.ov-facts-foot{margin-top:26px;padding-top:16px;border-top:1px solid var(--border);text-align:right}
+.ov-facts-foot h2{font-size:12px;color:var(--muted);font-weight:700;margin:0 0 7px}
+.ov-facts{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:5px 0;color:var(--muted);font-size:11.5px;line-height:1.6}
+.ov-facts span{white-space:nowrap}
+.ov-facts span:not(:last-child)::after{content:"|";color:var(--dim);margin:0 10px}
+.ov-facts strong{color:var(--text);font-weight:700}
+@media(max-width:1000px){.ov-grid{grid-template-columns:1fr}}
