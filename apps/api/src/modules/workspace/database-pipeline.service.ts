@@ -123,7 +123,29 @@ export class DatabasePipelineService {
    * it the standard app preset. Returns both credentials (caller encrypts them
    * with SecretsService). Cleans the container up again on any failure.
    */
-  async provision(engine: string, databaseName: string, name: string): Promise<ProvisionedDatabase> {
+  /**
+   * Provisioning is serialized: concurrent creates raced on the deterministic
+   * container name (cl-<database>) and each other's docker exec loops.
+   */
+  private provisionChain: Promise<unknown> = Promise.resolve();
+
+  async provision(
+    engine: string,
+    databaseName: string,
+    name: string,
+    opts?: { force?: boolean },
+  ): Promise<ProvisionedDatabase> {
+    const task = this.provisionChain.then(() => this.runProvision(engine, databaseName, name, opts?.force ?? false));
+    this.provisionChain = task.catch(() => undefined);
+    return task as Promise<ProvisionedDatabase>;
+  }
+
+  private async runProvision(
+    engine: string,
+    databaseName: string,
+    name: string,
+    force: boolean,
+  ): Promise<ProvisionedDatabase> {
     const spec = this.specFor(engine);
     this.assertDatabaseName(databaseName);
     const cname = this.containerNameFor(databaseName);
@@ -135,9 +157,16 @@ export class DatabasePipelineService {
       )
     ).trim();
     if (existing) {
-      throw new BadRequestException(
-        `A database container named ${cname} already exists on this server. Choose a different database name.`,
-      );
+      if (!force) {
+        throw new BadRequestException(
+          `A database container named ${cname} already exists on this server. Choose a different database name.`,
+        );
+      }
+      // Self-heal path: a stale container (left by a deleted service or a
+      // failed run) blocks the deterministic name — remove it and re-create.
+      await this.docker(['rm', '-f', cname], {
+        failLabel: `Could not remove the stale container ${cname}`,
+      });
     }
 
     const rootPassword = this.generatePassword();

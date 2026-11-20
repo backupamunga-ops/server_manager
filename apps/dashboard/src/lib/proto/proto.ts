@@ -127,6 +127,8 @@ let ui: Record<string, unknown> = {
   termRole: 'developer', termSession: null as null | { serviceId: string; startedAt: number; expiresAt: number; entries: { kind: string; text: string }[] },
   sqlDraft: '', sqlResult: null as null | { serviceId: string; blocked: boolean; columns: string[]; rows: unknown[][]; message: string },
   storageBucketId: null as string | null, storagePrefix: '', storageSearch: '',
+  confirmBox: null as null | { message: string; danger: boolean; resolve: (v: boolean) => void },
+  busy: null as string | null,
 };
 
 /* Server sync — mutations go through runAction / real endpoints. */
@@ -141,6 +143,8 @@ async function syncState(): Promise<void> {
 }
 /** Dispatch a prototype mutation; the server returns a fresh aggregate. */
 async function apply(type: string, payload: Record<string, unknown> = {}): Promise<boolean> {
+  ui.busy = type;
+  render();
   try {
     const res = await api.post<{ generatedKey?: string } & CloudlaneState>('/workspace/actions', { type, payload });
     if (res.generatedKey !== undefined) ui.revealedKey = res.generatedKey;
@@ -151,6 +155,8 @@ async function apply(type: string, payload: Record<string, unknown> = {}): Promi
   } catch (err) {
     flash(err instanceof ApiError ? err.message : 'The operation failed. Please try again.', true);
     return false;
+  } finally {
+    ui.busy = null;
   }
 }
 
@@ -249,8 +255,11 @@ const date = (d?: string | null) => d ? new Date(d).toLocaleString(undefined, {
   month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
 }) : '—';
 const cap = (s: unknown) => String(s || '').replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+/** Server brand — set SERVER_NAME in the API env; rebranding is one env change. */
+const brand = (): string => String((state as Record<string, unknown>).brand || 'Cloudlane');
+const serverIp = (): string => String((state as Record<string, unknown>).serverIp || '95.211.164.33');
 const btn = (label: string, act: string, variant = '', extra = '') =>
-  `<button class="btn ${variant}" data-action="${act}" ${extra}>${label}</button>`;
+  `<button class="btn ${variant}" data-action="${act}" ${extra}>${ui.busy === act ? '<span class="spin"></span> ' : ''}${label}</button>`;
 const badge = (name: unknown, kind = '') => `<span class="tag ${kind}">${esc(name)}</span>`;
 const statusBadge = (s?: string) => {
   const val = String(s || 'unknown').toLowerCase();
@@ -372,7 +381,7 @@ const navGroupsV15 = [{
 }];
 
 function sidebar(): string {
-  return `<aside class="sidebar ${ui.mobileMenu ? 'open' : ''}"><div class="brand"><div class="logo">${ico('layers', 22)}</div><div><div class="brand-name">cloudlane<span style="color:var(--mint)">.</span></div><div class="brand-tag">INFRASTRUCTURE, SIMPLIFIED</div></div></div><nav class="nav-list" aria-label="Main navigation">${navGroupsV15.map((group) => `<div class="nav-group-title">${group.label}</div>${group.items.map(([id, ic, t]) => `<button class="nav-item ${ui.page === id || ((ui.page === 'project' || ui.page === 'service') && id === 'projects') || (ui.page === 'domainDetail' && id === 'domains') ? 'active' : ''}" data-action="go" data-page="${id}">${ico(ic, 16)}<span>${t}</span></button>`).join('')}`).join('')}</nav><div class="sidebar-bottom"><button class="side-small-link" data-action="openDocs">${ico('book', 15)} Documentation ${ico('external', 13)}</button><div class="tiny-profile" style="margin-top:10px"><div class="avatar">${esc(initials())}</div><div><div class="profile-name">${esc(state.workspace)}</div><div class="profile-meta">Cloudlane workspace</div></div></div></div></aside>`;
+  return `<aside class="sidebar ${ui.mobileMenu ? 'open' : ''}"><div class="brand"><div class="logo">${ico('layers', 22)}</div><div><div class="brand-name">${esc(brand())}<span style="color:var(--mint)">.</span></div><div class="brand-tag">INFRASTRUCTURE, SIMPLIFIED</div></div></div><nav class="nav-list" aria-label="Main navigation">${navGroupsV15.map((group) => `<div class="nav-group-title">${group.label}</div>${group.items.map(([id, ic, t]) => `<button class="nav-item ${ui.page === id || ((ui.page === 'project' || ui.page === 'service') && id === 'projects') || (ui.page === 'domainDetail' && id === 'domains') ? 'active' : ''}" data-action="go" data-page="${id}">${ico(ic, 16)}<span>${t}</span></button>`).join('')}`).join('')}</nav><div class="sidebar-bottom"><button class="side-small-link" data-action="openDocs">${ico('book', 15)} Documentation ${ico('external', 13)}</button><div class="tiny-profile" style="margin-top:10px"><div class="avatar">${esc(initials())}</div><div><div class="profile-name">${esc(state.workspace)}</div><div class="profile-meta">${esc(brand())} workspace</div></div></div></div></aside>`;
 }
 const initials = () => (state.workspace || 'CW').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || 'CW';
 
@@ -580,7 +589,7 @@ function domainDetailView(): string {
   ];
   let body = '';
   if (ui.tab === 'overview') body =
-    `<div class="grid two-wide"><div class="col" style="gap:16px"><div class="card"><div class="row space"><h3 class="section-title">Domain overview</h3>${statusBadge(z.status)}</div><div class="kv" style="margin-top:9px"><span class="k">Domain</span><span class="v mono">${esc(z.name)}</span><span class="k">DNS management</span><span class="v">${dnsModeLabel(z)} (demo)</span><span class="k">Registered</span><span class="v">${date(z.created)}</span><span class="k">Hostnames</span><span class="v">${hs.length}</span><span class="k">Connections</span><span class="v">${connections.length} applications</span></div><div class="divider"></div>${btn(`${ico('file', 14)} View DNS records`, 'domainTab', '', 'data-tab="dns-records"')} ${btn(`${ico('link', 14)} View connections`, 'domainTab', '', 'data-tab="connections"')}</div><div class="card"><div class="row space"><h3 class="section-title">Recent hostnames</h3>${btn('View all', 'domainTab', 'btn-small', 'data-tab="subdomains"')}</div>${hs.slice(0, 5).map((h) => `<div class="host-row"><span class="mono small">${esc(h.name)}</span>${h.serviceId ? badge('Connected', 'ok') : badge('Available', 'blue')}</div>`).join('')}</div></div><div class="col" style="gap:16px"><div class="card"><h3 class="section-title">Domain readiness</h3><div class="readiness-list"><div>${ico('check', 16)} Domain entry created</div><div>${ico(z.status === 'verified' ? 'check' : 'alert', 16)} DNS ${z.status === 'verified' ? 'verified' : 'verification pending'}</div><div>${ico('shield', 16)} HTTPS for connected services</div><div>${ico('mail', 16)} Mailboxes and aliases</div></div>${z.status !== 'verified' ? btn('Verify ownership', 'openModal', 'btn-primary', 'data-modal="verifyZone"') : ''}</div><div class="card"><h3 class="section-title">How this connects to projects</h3><p class="muted small">Create hostnames here. In your application's Domains tab, select a verified, available hostname. Routes and certificates are then activated automatically (Caddy + on-demand TLS).</p><div style="margin-top:15px">${btn(`${ico('plus', 14)} Add subdomain`, 'openModal', '', 'data-modal="subdomain"')}</div></div></div></div>`;
+    `<div class="grid two-wide"><div class="col" style="gap:16px"><div class="card"><div class="row space"><h3 class="section-title">Domain overview</h3>${statusBadge(z.status)}</div><div class="kv" style="margin-top:9px"><span class="k">Domain</span><span class="v mono">${esc(z.name)}</span><span class="k">DNS management</span><span class="v">${dnsModeLabel(z)} (demo)</span><span class="k">Registered</span><span class="v">${date(z.created)}</span><span class="k">Hostnames</span><span class="v">${hs.length}</span><span class="k">Connections</span><span class="v">${connections.length} applications</span></div><div class="divider"></div>${btn(`${ico('file', 14)} View DNS records`, 'domainTab', '', 'data-tab="dns-records"')} ${btn(`${ico('link', 14)} View connections`, 'domainTab', '', 'data-tab="connections"')}</div><div class="card"><div class="row space"><h3 class="section-title">Recent hostnames</h3>${btn('View all', 'domainTab', 'btn-small', 'data-tab="subdomains"')}</div>${hs.slice(0, 5).map((h) => `<div class="host-row"><span class="mono small">${esc(h.name)}</span>${h.serviceId ? badge('Connected', 'ok') : badge('Available', 'blue')}</div>`).join('')}</div></div><div class="col" style="gap:16px"><div class="card"><h3 class="section-title">Domain readiness</h3><div class="readiness-list"><div>${ico('check', 16)} Domain entry created</div><div>${ico(z.status === 'verified' ? 'check' : 'alert', 16)} DNS ${z.status === 'verified' ? 'verified (live check)' : 'verification pending — point the A record at ' + esc(serverIp())}</div><div>${ico('shield', 16)} HTTPS for connected services (automatic, Let's Encrypt)</div><div>${ico('mail', 16)} Mailboxes and aliases (MX records required at your DNS host)</div></div>${z.status !== 'verified' ? btn('Verify ownership', 'openModal', 'btn-primary', 'data-modal="verifyZone"') : ''}</div><div class="card"><h3 class="section-title">How this connects to projects</h3><p class="muted small">Create hostnames here. In your application's Domains tab, select a verified, available hostname. Routes and certificates are then activated automatically (Caddy + on-demand TLS).</p><div style="margin-top:15px">${btn(`${ico('plus', 14)} Add subdomain`, 'openModal', '', 'data-modal="subdomain"')}</div></div></div></div>`;
   else if (ui.tab === 'dns-records') body =
     `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">DNS records</h3><p class="muted xs">${z.dnsMode === 'managed' ? 'Managed zone draft (demo): changes would publish to Cloudlane authoritative nameservers after delegation.' : 'Manual DNS checklist: update these records at your current authoritative DNS host.'}</p></div>${btn(`${ico('plus', 14)} Add record`, 'openModal', 'btn-primary', 'data-modal="dnsRecord"')}</div><div class="card table-frame"><div class="table-wrap"><table class="table"><thead><tr><th>Type</th><th>Host</th><th>Value / target</th><th>TTL</th><th>Action</th></tr></thead><tbody>${records.map((r) => `<tr><td>${badge(r.type, r.type === 'MX' ? 'violet' : 'blue')}</td><td class="mono">${esc(r.name)}</td><td class="mono xs dns-value">${r.priority !== undefined ? `<span class="muted">${r.priority} · </span>` : ''}${esc(r.value)}</td><td class="mono">${esc(r.ttl || 3600)}s</td><td><div class="row">${btn('Edit', 'editDns', 'btn-small', `data-id="${r.id}"`)}${btn(`${ico('trash', 13)}`, 'deleteDns', 'btn-small', `data-id="${r.id}" aria-label="Delete DNS record"`)}</div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No DNS records yet.</td></tr>'}</tbody></table></div></div><div class="notice" style="margin-top:16px">${z.dnsMode === 'managed' ? 'Production requires authoritative nameserver infrastructure. Records here are only simulated and NOT published.' : 'You remain responsible for applying these records at your current DNS host. Edits here never change public DNS.'} ${btn('Copy DNS checklist', 'copyDnsChecklist', 'btn-small', `data-id="${z.id}"`)}</div>`;
   else if (ui.tab === 'subdomains') body =
@@ -654,7 +663,7 @@ function applicationService(s: ServiceRec): string {
   if (ui.tab === 'artifacts') return appArtifactsView(s);
   if (ui.tab === 'volumes') return appVolumesView(s);
   if (ui.tab === 'overview')
-    return `<div class="grid two-wide"><div class="col" style="gap:17px"><div class="card"><div class="row space"><h3 class="section-title">Live application</h3>${statusBadge(s.status)}</div><p class="muted small">Production deployment endpoint</p><div class="callout"><div class="row space"><div class="col"><span class="muted xs">Public URL</span><span class="mono" style="font-size:13px;color:var(--mint);overflow-wrap:anywhere">https://${esc(primaryDomain(s.id))}</span></div>${btn(`${ico('copy', 14)} Copy`, 'copy', 'btn-small', `data-copy="https://${attr(primaryDomain(s.id))}"`)}</div></div><div class="divider"></div><div class="grid two"><div class="kv"><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${cap(s.role)}</span></div><div class="kv"><span class="k">Environment</span><span class="v">production</span><span class="k">Runtime</span><span class="v">Docker</span></div></div></div><div class="card"><div class="row space"><h3 class="section-title">Live preview</h3>${primaryDomain(s.id) !== 'Not configured' ? btn('Open in new tab', 'openExternal', 'btn-small', `data-url="https://${attr(primaryDomain(s.id))}"`) : ''}</div>${isVisualApp(s) ? `<div id="preview-scale-box" style="margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#0b1518;height:280px"><iframe id="preview-frame" src="https://${attr(primaryDomain(s.id))}" loading="lazy" sandbox="allow-scripts" style="width:1440px;height:875px;border:0;transform-origin:0 0;pointer-events:none" title="Live preview"></iframe></div><p class="hint">Live view of the production URL. Use Open in new tab for the full app.</p>` : `<div style="margin-top:12px;border:1px dashed var(--border);border-radius:10px;height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted)">${ico('terminal', 24)}<span class="small">Backend service — no visual preview</span></div>`}</div><div class="card"><div class="row space"><h3 class="section-title">Latest deployment</h3><button class="link" data-action="serviceTab" data-tab="deployments">Deployment history</button></div>${d ? `<div class="row space" style="margin-top:17px"><div><div class="row">${statusBadge(d.status)}<span class="mono muted xs">${esc(d.revision)}</span></div><p class="muted xs">Started ${age(d.created)}</p></div>${btn('View logs', 'serviceTab', 'btn-small', 'data-tab="logs"')}</div>${d.status !== 'LIVE' && d.status !== 'FAILED' ? `<div class="progress skeleton"><span style="width:${Math.max(8, Number(d.stage) * 12)}%"></span></div>` : ''}` : '<p class="muted small">No deployment yet</p>'}</div></div></div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Source control</h3><div class="divider"></div><div class="row"><span class="status-icon">${ico(s.source === 'github' ? 'github' : 'archive', 17)}</span><div><div class="strong small">${esc(s.source === 'github' ? s.repo : s.fileName || 'Uploaded archive')}</div><div class="muted xs">${s.source === 'github' ? `Branch ${esc(s.branch || 'main')}` : 'Local ZIP source'}</div></div></div>${s.source === 'github' ? `<div class="divider"></div><div class="row space"><span class="muted xs">Automatic deploy</span>${badge(s.autoDeploy ? 'Enabled' : 'Disabled', s.autoDeploy ? 'ok' : 'warn')}</div><div style="margin-top:12px">${btn(`${ico('branch', 14)} Simulate new commit`, 'simulatePush', 'btn-small', `data-id="${s.id}"`)}</div>` : ''}</div><div class="card"><h3 class="section-title">Health &amp; networking</h3><div class="divider"></div><div class="row space"><span class="muted small">Health check</span>${statusBadge(s.status === 'running' ? 'healthy' : s.status)}</div><div class="row space" style="margin-top:11px"><span class="muted small">Domains</span><strong class="small">${domainsFor(s.id).length}</strong></div><div class="row space" style="margin-top:11px"><span class="muted small">Build strategy</span><strong class="small">Auto-detected</strong></div></div></div></div>`;
+    return `<div class="grid two-wide"><div class="col" style="gap:17px"><div class="card"><div class="row space"><h3 class="section-title">Live application</h3>${statusBadge(s.status)}</div><p class="muted small">Production deployment endpoint</p><div class="callout"><div class="row space"><div class="col"><span class="muted xs">Public URL</span><span class="mono" style="font-size:13px;color:var(--mint);overflow-wrap:anywhere">https://${esc(primaryDomain(s.id))}</span></div>${btn(`${ico('copy', 14)} Copy`, 'copy', 'btn-small', `data-copy="https://${attr(primaryDomain(s.id))}"`)}</div></div><div class="divider"></div><div class="grid two"><div class="kv"><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${cap(s.role)}</span></div><div class="kv"><span class="k">Environment</span><span class="v">production</span><span class="k">Runtime</span><span class="v">Docker</span></div></div></div><div class="card"><div class="row space"><h3 class="section-title">Live preview</h3>${primaryDomain(s.id) !== 'Not configured' ? btn('Open in new tab', 'openExternal', 'btn-small', `data-url="https://${attr(primaryDomain(s.id))}"`) : ''}</div>${isVisualApp(s) ? `<div id="preview-scale-box" style="margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#0b1518;height:280px"><iframe id="preview-frame" src="https://${attr(primaryDomain(s.id))}" loading="lazy" sandbox="allow-same-origin allow-scripts allow-forms allow-popups" style="width:1440px;height:875px;border:0;transform-origin:0 0;pointer-events:none" title="Live preview"></iframe></div><p class="hint">Live view of the production URL. Use Open in new tab for the full app.</p>` : `<div style="margin-top:12px;border:1px dashed var(--border);border-radius:10px;height:170px;display:flex;align-items:center;justify-content:center;gap:9px;color:var(--muted)">${ico('terminal', 24)}<span class="small">Backend service — no visual preview</span></div>`}</div><div class="card"><div class="row space"><h3 class="section-title">Latest deployment</h3><button class="link" data-action="serviceTab" data-tab="deployments">Deployment history</button></div>${d ? `<div class="row space" style="margin-top:17px"><div><div class="row">${statusBadge(d.status)}<span class="mono muted xs">${esc(d.revision)}</span></div><p class="muted xs">Started ${age(d.created)}</p></div>${btn('View logs', 'serviceTab', 'btn-small', 'data-tab="logs"')}</div>${d.status !== 'LIVE' && d.status !== 'FAILED' ? `<div class="progress skeleton"><span style="width:${Math.max(8, Number(d.stage) * 12)}%"></span></div>` : ''}` : '<p class="muted small">No deployment yet</p>'}</div></div></div><div class="col" style="gap:17px"><div class="card"><h3 class="section-title">Source control</h3><div class="divider"></div><div class="row"><span class="status-icon">${ico(s.source === 'github' ? 'github' : 'archive', 17)}</span><div><div class="strong small">${esc(s.source === 'github' ? s.repo : s.fileName || 'Uploaded archive')}</div><div class="muted xs">${s.source === 'github' ? `Branch ${esc(s.branch || 'main')}` : 'Local ZIP source'}</div></div></div>${s.source === 'github' ? `<div class="divider"></div><div class="row space"><span class="muted xs">Automatic deploy</span>${badge(s.autoDeploy ? 'Enabled' : 'Disabled', s.autoDeploy ? 'ok' : 'warn')}</div><div style="margin-top:12px">${btn(`${ico('branch', 14)} Simulate new commit`, 'simulatePush', 'btn-small', `data-id="${s.id}"`)}</div>` : ''}</div><div class="card"><h3 class="section-title">Health &amp; networking</h3><div class="divider"></div><div class="row space"><span class="muted small">Health check</span>${statusBadge(s.status === 'running' ? 'healthy' : s.status)}</div><div class="row space" style="margin-top:11px"><span class="muted small">Domains</span><strong class="small">${domainsFor(s.id).length}</strong></div><div class="row space" style="margin-top:11px"><span class="muted small">Build strategy</span><strong class="small">Auto-detected</strong></div></div></div></div>`;
   if (ui.tab === 'deployments')
     return `<div class="row space" style="margin-bottom:16px"><h3 class="section-title">Deployment history</h3>${btn(`${ico('refresh', 14)} Redeploy`, 'redeploy', '', `data-id="${s.id}"`)}</div><div class="card table-frame"><div class="table-wrap"><table class="table"><thead><tr><th>Release</th><th>Revision</th><th>Started</th><th>Status</th><th>Actions</th></tr></thead><tbody>${ds.map((d) => `<tr><td class="mono main-cell">${esc(d.id)}</td><td class="mono">${esc(d.revision)}</td><td>${date(d.created)}</td><td>${statusBadge(d.status)}</td><td><div class="row">${btn('Logs', 'openLogs', 'btn-small', `data-id="${d.id}"`)}${d.status === 'LIVE' && d.id !== s.activeDeployment ? btn('Rollback', 'rollback', 'btn-small', `data-id="${d.id}"`) : ''}</div></td></tr>`).join('')}</tbody></table></div></div><p class="hint">Rollback reactivates a retained successful release.</p>`;
   if (ui.tab === 'logs') {
@@ -921,6 +930,20 @@ function settingsView(): string {
   return lead + tabs + appearancePanel() +
     `<div class="setting-grid"><div class="card"><h3 class="section-title">Design direction</h3><p class="muted small">Simple defaults, progressive disclosure, and contextual actions. Keep Projects, Domains, Databases, Email and Cron Jobs accessible from the main sidebar.</p></div><div class="card"><h3 class="section-title">Planned capabilities</h3><p class="muted small">Project-scoped file manager, stronger recovery automation, multi-server agents, teams and reseller features will be added in phases.</p>${badge('Roadmap · not yet functional', 'blue')}</div></div>`;
 }
+/* ── custom confirm (replaces native confirm()) — promise-based, styled ── */
+function confirmModal(message: string, danger = false): Promise<boolean> {
+  return new Promise((resolve) => {
+    ui.confirmBox = { message, danger, resolve };
+    render();
+  });
+}
+
+function confirmModalView(): string {
+  const cb = ui.confirmBox as { message: string; danger: boolean; resolve: (v: boolean) => void } | null;
+  if (!cb) return '';
+  return `<div class="modal-wrap open" data-action="confirmAnswer" data-value="0"><div class="modal" data-confirm-card="1" style="max-width:430px"><h3 class="section-title">${cb.danger ? 'Remove this?' : 'Please confirm'}</h3><p style="margin:12px 0 20px">${esc(cb.message)}</p><div class="row" style="justify-content:flex-end;gap:10px"><button class="btn" data-action="confirmAnswer" data-value="0">Cancel</button><button class="btn ${cb.danger ? 'btn-danger' : 'btn-primary'}" data-action="confirmAnswer" data-value="1" style="${cb.danger ? '' : 'background:#1f7a66;border-color:#1f7a66'}">Confirm</button></div></div></div>`;
+}
+
 /* ── modals — verbatim from the prototype (final merged layer) ── */
 
 function openModal(type: string, extra: Record<string, unknown> = {}): void {
@@ -1021,7 +1044,7 @@ function modalView(): string {
     const z = domainZone((ui.modalData.zoneId as string) || (ui.domainZoneId as string));
     const mode = z ? (z.pendingDnsMode || z.dnsMode || 'manual') : 'manual';
     html = z ?
-      `<div class="dns-guide">${mode === 'managed' ? `<div class="soft-banner">${ico('globe', 20)}<div><strong>Nameserver delegation (demo)</strong><p>At your domain registrar, replace the existing nameservers only after migrating all records and checking DNSSEC.</p></div></div><div class="dns-guide-grid">${CLOUDLANE_DEMO_NS.map((ns, i) => `<div class="dns-mini-panel"><div class="muted xs">Nameserver ${i + 1}</div><div class="mono small" style="margin:7px 0">${ns}</div>${btn('Copy', 'copy', 'btn-small', `data-copy="${ns}"`)}</div>`).join('')}</div><div class="notice">These .example nameservers are placeholders and WILL NOT resolve. Real managed DNS cannot be activated until two independent authoritative nameservers are deployed.</div>` : `<div class="callout"><h3 class="section-title mono">${esc(z.name)} · Manual DNS</h3><div class="divider"></div><div class="kv"><span class="k">Record type</span><span class="v mono">TXT</span><span class="k">Host</span><span class="v mono">_cloudlane</span><span class="k">Value</span><span class="v mono">cloudlane-verify-demo</span></div><p class="hint">Create the verification TXT at your current DNS host. Demo values are not real verification tokens.</p></div>`}<div class="dns-migration-check"><strong class="small">Before you finish:</strong><label>${ico('check', 15)} Copy existing A/AAAA, CNAME, MX, SPF, DKIM, DMARC and verification records</label><label>${ico('check', 15)} Review DNSSEC / registrar DS records when switching nameservers</label><label>${ico('check', 15)} Confirm your website and email will keep resolving</label></div></div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Cancel', 'closeModal')}${btn(mode === 'managed' ? 'Simulate delegation check' : 'Simulate TXT verification', 'verifyZoneConfirm', 'btn-primary', `data-id="${z.id}"`)}</div>` :
+      `<div class="dns-guide">${mode === 'managed' ? `<div class="soft-banner">${ico('globe', 20)}<div><strong>Nameserver delegation (planned)</strong><p>Managed DNS needs two authoritative Cloudlane nameservers before delegation can go live. Until then, use Manual DNS — its verification is fully real.</p></div></div><div class="dns-guide-grid">${CLOUDLANE_DEMO_NS.map((ns, i) => `<div class="dns-mini-panel"><div class="muted xs">Nameserver ${i + 1}</div><div class="mono small" style="margin:7px 0">${ns}</div>${btn('Copy', 'copy', 'btn-small', `data-copy="${ns}"`)}</div>`).join('')}</div><div class="notice">These .example nameservers are placeholders and WILL NOT resolve. Real managed DNS cannot be activated until two independent authoritative nameservers are deployed.</div>` : `<div class="callout"><h3 class="section-title mono">${esc(z.name)} · Manual DNS — real verification</h3><div class="divider"></div><div class="kv"><span class="k">Option 1 (easiest)</span><span class="v mono">A record · @ → ${esc(serverIp())}</span><span class="k">Option 2</span><span class="v mono">TXT · _cloudlane → ${esc(zoneRecords(z.id).find((r) => r.name === '_cloudlane')?.value || '(see DNS Records)')}</span></div><p class="hint">Do either one at your DNS host, then press Verify DNS. Ownership is checked live against the real DNS system — an A record pointing to this server or a matching TXT both pass. DNS propagation may take a few minutes.</p></div>`}<div class="dns-migration-check"><strong class="small">Before you finish:</strong><label>${ico('check', 15)} Copy existing A/AAAA, CNAME, MX, SPF, DKIM, DMARC and verification records</label><label>${ico('check', 15)} Review DNSSEC / registrar DS records when switching nameservers</label><label>${ico('check', 15)} Confirm your website and email will keep resolving</label></div></div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Cancel', 'closeModal')}${btn(mode === 'managed' ? 'Check delegation' : 'Verify DNS now', 'verifyZoneConfirm', 'btn-primary', `data-id="${z.id}"`)}</div>` :
       '';
   }
   if (type === 'subdomain') {
@@ -1466,7 +1489,7 @@ function runDemoSql(query: string): void {
 
 const fiveMinutes = 5 * 60 * 1000;
 
-function doAction(action: string, el: HTMLElement, event: Event): void {
+async function doAction(action: string, el: HTMLElement, event: Event): Promise<void> {
   const id = (el.dataset.id || '') as string;
   switch (action) {
     case 'go': {
@@ -1522,6 +1545,19 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
         serviceId: el.dataset.service || ui.serviceId || '',
       });
       break;
+    case 'confirmAnswer': {
+      const cb = ui.confirmBox as { message: string; danger: boolean; resolve: (v: boolean) => void } | null;
+      const value = el.getAttribute('data-value') === '1';
+      // clicking the dark backdrop (not the card) cancels
+      if ((e.target as HTMLElement).closest('[data-confirm-card]') && !value) {
+        // click landed inside the card but not on a button — ignore
+        const isBtn = (e.target as HTMLElement).closest('button');
+        if (!isBtn) break;
+      }
+      ui.confirmBox = null;
+      cb?.resolve(value);
+      break;
+    }
     case 'closeModal':
       ui.modal = null;
       ui.modalData = {};
@@ -1740,7 +1776,7 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
       break;
     }
     case 'deleteDns': {
-      if (!confirm('Remove this DNS record?')) return;
+      if (!(await confirmModal('Remove this DNS record?', true))) break;
       void apply('deleteDns', { recordId: id }).then((ok) => {
         if (ok) { render(); flash('DNS record removed.'); }
       });
@@ -1750,7 +1786,7 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
       const h = state.hostnames.find((x) => x.id === id);
       if (!h) return;
       if (h.type === 'apex' || h.serviceId) { flash('Disconnect this hostname first.', true); return; }
-      if (!confirm('Delete subdomain ' + h.name + '?')) return;
+      if (!(await confirmModal('Delete subdomain ' + h.name + '?', true))) break;
       void apply('deleteHostname', { hostnameId: id }).then((ok) => {
         if (ok) { render(); flash('Subdomain deleted.'); }
       });
@@ -1760,7 +1796,7 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
       const h = state.hostnames.find((x) => x.id === id);
       if (!h || !h.serviceId) return;
       const s = service(h.serviceId);
-      if (!confirm('Disconnect ' + h.name + ' from ' + (s?.name || 'this service') + '?')) return;
+      if (!(await confirmModal('Disconnect ' + h.name + ' from ' + (s?.name || 'this service') + '?', true))) break;
       void apply('unassignHostname', { hostnameId: id }).then((ok) => {
         if (ok) { render(); flash('Hostname is now available in the registry.'); }
       });
@@ -1779,14 +1815,14 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
       const m = state.mailboxes.find((x) => x.id === id);
       if (!m) return;
       const z = domainZone(m.zoneId);
-      if (!confirm(`Delete demo mailbox ${m.local}@${z?.name} and any aliases pointing to it?`)) return;
+      if (!(await confirmModal(`Delete mailbox ${m.local}@${z?.name} and any aliases pointing to it?`, true))) break;
       void apply('deleteMailbox', { mailboxId: id }).then((ok) => {
         if (ok) { render(); flash('Mailbox removed.'); }
       });
       break;
     }
     case 'deleteAlias': {
-      if (!confirm('Remove this alias?')) return;
+      if (!(await confirmModal('Remove this alias?', true))) break;
       void apply('deleteAlias', { aliasId: id }).then((ok) => {
         if (ok) { render(); flash('Alias removed.'); }
       });
@@ -1796,7 +1832,7 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
       const z = domainZone(id);
       if (!z) return;
       if (zoneHostnames(id).some((h) => h.serviceId)) { flash('Disconnect all project hostnames before removing this domain.', true); return; }
-      if (!confirm(`Remove domain ${z.name} and all its simulated DNS records and email accounts?`)) return;
+      if (!(await confirmModal(`Remove domain ${z.name} and all its DNS records and email accounts?`, true))) break;
       void apply('deleteZone', { zoneId: id }).then((ok) => {
         if (ok) { flash('Domain removed from the registry.'); go('domains'); }
       });
@@ -1828,7 +1864,7 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
     case 'toggleDbUser': {
       const u = userFor(id);
       if (!u) return;
-      if (!u.revoked && !confirm(`Revoke access for ${u.username} to this database?`)) return;
+      if (!u.revoked && !(await confirmModal(`Revoke access for ${u.username} to this database?`, true))) break;
       void apply('toggleDbUser', { userId: id }).then((ok) => {
         ui.modal = null;
         if (ok) { render(); flash(u.revoked ? 'User access restored.' : 'User access revoked.'); }
@@ -1911,7 +1947,7 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
     case 'revokeApiKey': {
       const k = state.apiKeys.find((x) => x.id === id);
       if (!k || k.revoked) return;
-      if (!confirm('Revoke this nonfunctional demo key?')) return;
+      if (!(await confirmModal('Revoke this API key?', true))) break;
       void apply('apiKeyRevoke', { id }).then((ok) => {
         if (ok) { render(); flash('Demo key revoked.'); }
       });
@@ -1947,14 +1983,14 @@ function doAction(action: string, el: HTMLElement, event: Event): void {
     case 'storageDeleteObject': {
       const obj = state.objects.find((o) => o.id === id);
       if (!obj) return;
-      if (!confirm('Remove this simulated object metadata? (No real file exists.)')) return;
+      if (!(await confirmModal('Remove this object metadata?', true))) break;
       void apply('objectDelete', { objectId: id }).then((ok) => {
         if (ok) { render(); flash('Demo object metadata removed.'); }
       });
       return;
     }
     case 'storageRevokeGrant': {
-      if (!confirm('Revoke this simulated bucket access grant?')) return;
+      if (!(await confirmModal('Revoke this bucket access grant?', true))) break;
       void apply('storageRevokeGrant', { grantId: id }).then((ok) => {
         if (ok) { render(); flash('Demo grant revoked.'); }
       });
@@ -2385,7 +2421,7 @@ function render(): void {
   };
   const page = (pageFns[ui.page as string] || overview)();
   const nextHtml =
-    `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div></main></div>${ui.modal ? modalView() : ''}`;
+    `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div></main></div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`;
   if (nextHtml === lastRenderedHtml) {
     renderToast();
     return;
@@ -2491,7 +2527,7 @@ function onFabClickCapture(e: Event): void {
   e.stopImmediatePropagation();
 }
 
-function onClick(e: MouseEvent): void {
+async function onClick(e: MouseEvent): Promise<void> {
   const el = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
   if (!el) return;
   if (el.matches('button')) e.preventDefault();
@@ -2722,12 +2758,12 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   const id = el.getAttribute('data-id') || '';
-  if (id && confirm('Delete this project? Every service inside it (containers, routes, databases, history) is removed. This cannot be undone.')) {
-    void (async () => {
-      const ok = await apply('deleteProject', { projectId: id });
-      if (ok) { ui.page = 'projects'; void render(); }
-    })();
-  }
+  if (!id) return;
+  void (async () => {
+    if (!(await confirmModal('Delete this project? Every service inside it (containers, routes, databases, history) is removed. This cannot be undone.', true))) return;
+    const ok = await apply('deleteProject', { projectId: id });
+    if (ok) { ui.page = 'projects'; void render(); }
+  })();
 }, true);
 
 /* Service delete (Danger zone) — capture-phase so it works regardless of dispatch order. */
@@ -2737,10 +2773,9 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   const id = el.getAttribute('data-id') || '';
-  if (id && confirm('Delete this service? Routes, database users and deployments are removed. This cannot be undone.')) {
-    void (async () => {
-      const ok = await apply('deleteService', { serviceId: id });
-      if (ok) { ui.page = 'projects'; void render(); }
-    })();
-  }
+  void (async () => {
+    if (!(await confirmModal('Delete this service? Routes, database users and deployments are removed. This cannot be undone.', true))) return;
+    const ok = await apply('deleteService', { serviceId: id });
+    if (ok) { ui.page = 'projects'; void render(); }
+  })();
 }, true);

@@ -388,11 +388,21 @@ export class ServicesService {
     let username = DB_APP_USERNAME;
     let password = s.passwordCipher ? this.secrets.decrypt(s.passwordCipher) : '';
 
-    // Databases registered while provisioning was unavailable have no container
-    // and no usable credential — run the container now and persist fresh creds.
-    const usable = password !== '' && (await this.databases.containerExists(host).catch(() => false));
-    if (!usable) {
-      const prov = await this.databases.provision(engine, databaseName, s.name);
+    // Self-heal, without destroying data:
+    //  - container missing (deleted externally / failed provisioning) → force
+    //    re-provision under the deterministic name and persist fresh creds.
+    //  - container present but credential missing → rotate the app user's
+    //    password in place (never recreate a healthy database on a click).
+    const exists = await this.databases.containerExists(host).catch(() => false);
+    if (exists && password === '') {
+      const rotated = await this.databases.rotateUserPassword(engine, databaseName, username);
+      password = rotated.password;
+      await this.prisma.service.update({
+        where: { id: s.id },
+        data: { passwordCipher: this.secrets.encrypt(password) },
+      });
+    } else if (!exists) {
+      const prov = await this.databases.provision(engine, databaseName, s.name, { force: true });
       host = prov.containerName;
       databaseName = prov.databaseName;
       username = prov.appUsername;

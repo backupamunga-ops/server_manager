@@ -35,6 +35,7 @@
  * hostname site block when (and only when) the Caddyfile declares it.
  */
 import { execFile } from 'node:child_process';
+import { resolve4 as dnsResolve4, resolve6 as dnsResolve6 } from 'node:dns/promises';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { connect as tlsConnect } from 'node:tls';
 import { promisify } from 'node:util';
@@ -203,6 +204,38 @@ export class DomainPipelineService {
       found,
       expectedToken: expectedToken.trim(),
       error,
+    };
+  }
+
+  /**
+   * REAL ownership proof, two accepted paths:
+   *  1. TXT `_cloudlane.<domain>` equals the zone's verification token.
+   *  2. The domain's A/AAAA record points at this server's IP — the strongest
+   *     practical signal that the owner is pointing the domain at us.
+   */
+  async verifyOwnership(
+    domainInput: string,
+    expectedToken: string,
+    serverIp: string,
+  ): Promise<TxtVerificationResult & { addresses: string[]; tokenMatch: boolean; pointsToServer: boolean }> {
+    const txt = await this.verifyTxt(domainInput, expectedToken);
+    const domain = txt.domain;
+    const addresses: string[] = [];
+    for (const fn of [dnsResolve4, dnsResolve6]) {
+      try {
+        addresses.push(...(await fn(domain)));
+      } catch {
+        // no record of that family — fine
+      }
+    }
+    const tokenMatch = txt.verified;
+    const pointsToServer = addresses.includes(serverIp);
+    return {
+      ...txt,
+      addresses,
+      tokenMatch,
+      pointsToServer,
+      verified: tokenMatch || pointsToServer,
     };
   }
 

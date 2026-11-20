@@ -6,6 +6,7 @@
  * deployments, variables) keep their dedicated endpoints; the actions here are
  * the scaffolding layer that the pipeline agents upgrade to full VPS wiring.
  */
+import { randomBytes } from 'node:crypto';
 import { readFile, statfs } from 'node:fs/promises';
 import os from 'node:os';
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
@@ -166,6 +167,8 @@ export class WorkspaceService {
     return {
       version: 1,
       workspace: ws.name,
+      brand: this.config.get<string>('SERVER_NAME') || 'Cloudlane',
+      serverIp: this.config.get<string>('SERVER_IP') || '95.211.164.33',
       githubConnected: ws.githubConnected,
       server: {
         id: 'srv_main', name: os.hostname(), os: prettyOs,
@@ -777,32 +780,39 @@ export class WorkspaceService {
           data: { workspaceId: wsId, name, status: 'pending', dnsMode: 'manual', delegation: 'pending' },
         });
         await this.prisma.hostname.create({ data: { zoneId: z.id, name, type: 'apex' } });
+        const verificationToken = `cloudlane-verify=${randomBytes(16).toString('hex')}`;
         await this.prisma.dnsRecord.create({
-          data: { zoneId: z.id, type: 'TXT', name: '_cloudlane', value: 'cloudlane-verify-demo', ttl: 3600 },
+          data: { zoneId: z.id, type: 'TXT', name: '_cloudlane', value: verificationToken, ttl: 3600 },
         });
-        await this.activity(wsId, 'Domain registered', `${name} · manual DNS (demo)`, 'domain');
+        await this.activity(wsId, 'Domain registered', `${name} · manual DNS`, 'domain');
         break;
       }
       case 'verifyZone': {
         const z = await findZone(p.zoneId);
         const mode = z.pendingDnsMode ?? z.dnsMode;
-        let how = 'simulation';
-        if (mode === 'manual') {
-          const records = await this.prisma.dnsRecord.findMany({ where: { zoneId: z.id } });
-          const token = this.domains.resolveZoneToken(records) ?? '';
-          const res = await this.domains.verifyTxt(z.name, token);
-          if (res.verified) how = 'live TXT match';
-          // else: fall through — the reserved demo namespaces cannot carry real DNS.
+        if (mode === 'managed') {
+          // Nameserver delegation needs live authoritative nameservers — not
+          // provisioned yet, so the transition stays a prepared draft.
+          throw new BadRequestException(
+            'Managed DNS (nameserver delegation) is not live yet: it needs two authoritative Cloudlane nameservers. Stay on Manual DNS for real verification.',
+          );
         }
+        const records = await this.prisma.dnsRecord.findMany({ where: { zoneId: z.id } });
+        const token = this.domains.resolveZoneToken(records) ?? '';
+        const serverIp = this.config.get<string>('SERVER_IP') || '95.211.164.33';
+        const res = await this.domains.verifyOwnership(z.name, token, serverIp);
+        if (!res.verified) {
+          const found = res.addresses.length ? `Found A/AAAA: ${res.addresses.join(', ')}` : 'No A/AAAA record found';
+          throw new BadRequestException(
+            `DNS verification failed for ${z.name}. ${found}. Point the A record of @ to ${serverIp}, or publish the TXT record shown in the panel, then verify again.`,
+          );
+        }
+        const how = res.tokenMatch ? 'TXT token match' : 'A record points to this server';
         await this.prisma.domainZone.update({
           where: { id: z.id },
-          data: {
-            status: 'verified', dnsMode: mode, pendingDnsMode: null,
-            delegation: mode === 'managed' ? 'verified-demo' : 'external-demo',
-          },
+          data: { status: 'verified', dnsMode: mode, pendingDnsMode: null, delegation: 'external' },
         });
-        await this.activity(wsId, mode === 'managed' ? 'Nameserver delegation simulated'
-          : `Manual DNS verified (${how})`, z.name, 'domain');
+        await this.activity(wsId, `Domain verified (${how})`, z.name, 'domain');
         break;
       }
       case 'dnsModePrepare': {
