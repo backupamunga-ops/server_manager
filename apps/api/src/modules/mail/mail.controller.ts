@@ -52,11 +52,9 @@ export class MailController {
 
   /** First workspace bucket (raw query — resilient to model changes). */
   private async mailBucket(wsId: string): Promise<string> {
-    const rows = await this.prisma.$queryRaw<Array<{ name: string }>>(
-      `SELECT name FROM "Bucket" WHERE "workspaceId" = ${wsId} ORDER BY "createdAt" ASC LIMIT 1`,
-    );
-    if (!rows?.length) throw new BadRequestException('No storage bucket in this workspace — create one to enable attachments.');
-    return rows[0].name;
+    const bucket = await this.prisma.bucket.findFirst({ where: { workspaceId: wsId } });
+    if (!bucket) throw new BadRequestException('No storage bucket in this workspace — create one to enable attachments.');
+    return bucket.name;
   }
 
   /** Registry mailboxes for this workspace, mapped to the tool's account model. */
