@@ -103,6 +103,7 @@ function parsePath(path: string): { page: string; pId: string | null; sId: strin
     return { page, pId: null, sId: null, tab: tab ?? (seg[0] === 'settings' ? 'workspace' : 'overview') };
   }
   if (seg[0] === 'mailbox' && seg[1]) return { page: 'mailbox', pId: seg[1], sId: null, tab: null };
+  if (seg[0] === 'files' && seg[1]) return { page: 'filesApp', pId: seg[1], sId: null, tab: null };
   if (seg[0] === 'projects' && seg[1]) return { page: 'project', pId: seg[1], sId: null, tab: tab ?? null };
   if (seg[0] === 'services' && seg[1]) return { page: 'service', pId: null, sId: seg[1], tab: tab ?? 'overview' };
   if (seg[0] === 'domains' && seg[1]) return { page: 'domainDetail', pId: seg[1], sId: null, tab: tab ?? 'overview' };
@@ -112,6 +113,7 @@ function buildPath(page: string, pId: string | null, sId: string | null, tab: st
   const inv: Record<string, string> = { storageIndex: 'storage', databases: 'databases', cron: 'cron' };
   const seg = inv[page] ?? page;
   if (page === 'mailbox' && pId) return `/mailbox/${pId}`;
+  if (page === 'filesApp' && pId) return `/files/${pId}`;
   if (page === 'project' && pId) return `/projects/${pId}`;
   if (page === 'service' && sId) return `/services/${sId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
   if (page === 'domainDetail' && pId) return `/domains/${pId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
@@ -660,7 +662,7 @@ function emailMailboxesTab(): string {
  <div class="card table-frame"><div class="table-wrap"><table class="table"><thead><tr><th>Email address</th><th>Domain</th><th>Quota</th><th>Status</th><th>Actions</th></tr></thead><tbody>${mail.map((m) => {
     const z = domainZone(m.zoneId);
     const quotaPct = Math.min(100, Math.round((m.quota / 1024) * 100));
-    return `<tr><td class="main-cell mono">${esc(m.local)}@${esc(z?.name || '—')}</td><td>${esc(z?.name || '—')}</td><td><div class="quota-bar" title="${m.quota} MB plan"><span style="width:${quotaPct}%"></span></div><span class="xs muted">${m.quota} MB</span></td><td>${badge('Registry active', 'ok')}</td><td><div class="row">${btn('Open inbox', 'openInbox', 'btn-small', `data-id="${m.id}"`)}${btn('Manage domain', 'openDomainEmail', 'btn-small', `data-id="${m.zoneId}"`)}${btn('Delete', 'deleteMailbox', 'btn-small', `data-id="${m.id}"`)}</div></td></tr>`;
+    return `<tr><td class="main-cell mono">${esc(m.local)}@${esc(z?.name || '—')}</td><td>${esc(z?.name || '—')}</td><td><div class="quota-bar" title="${m.quota} MB plan"><span style="width:${quotaPct}%"></span></div><span class="xs muted">${m.quota} MB</span></td><td>${badge('Registry active', 'ok')}</td><td><div class="row">${btn('Open inbox', 'openInbox', 'btn-small', `data-id="${m.id}"`)}${btn('Delete', 'deleteMailbox', 'btn-small', `data-id="${m.id}"`)}</div></td></tr>`;
   }).join('') || '<tr><td colspan="5"><div class="empty"><h3>No mailboxes yet</h3><p>Add a mailbox under a registered domain.</p></div></td></tr>'}</tbody></table></div></div>`;
 }
 
@@ -714,13 +716,25 @@ function mailWorkspace(showBanner: boolean): string {
  <div class="mail-shell"><div class="mail-folders">${folders.map(([k, t]) => `<button class="mail-folder ${cur === k ? 'active' : ''}" data-action="mailFolder" data-folder="${k}">${t}<span class="mail-count">${mailDemoFolderCount(k)}</span></button>`).join('')}</div>${list}${reader}</div>`;
 }
 
-function mailboxPageView(): string {
+function standaloneTopbar(tool: string, right: string): string {
+  return `<div class="sa-topbar"><div class="sa-brand"><span class="status-icon mint">${ico(tool === 'Mail' ? 'mail' : 'folder', 18)}</span><strong>Drevanta ${tool}</strong></div><div class="row" style="gap:10px;flex-wrap:wrap">${right}</div></div>`;
+}
+
+function standaloneMailboxView(): string {
   const m = state.mailboxes.find((x) => x.id === ui.projectId) || state.mailboxes[0];
-  if (!m) return `<div class="card empty"><h3>Mailbox not found</h3>${btn('Back to Email', 'go', 'btn-primary', 'data-page="email"')}</div>`;
+  if (!m) return `${standaloneTopbar('Mail', '')}<div class="card empty"><h3>Mailbox not found</h3>${btn('Open workspace email', 'go', 'btn-primary', 'data-page="email"')}</div>`;
   ui.mailBoxId = m.id;
   const z = domainZone(m.zoneId);
   const addr = `${m.local}@${z?.name || ''}`;
-  return `${heading('MAILBOX / INBOX PREVIEW', addr, `${esc(z?.name || '')} · quota ${m.quota} MB · demo messages until the mail stack ships`, btn('Email settings', 'go', '', 'data-page="email"'))}${mailWorkspace(false)}`;
+  return `${standaloneTopbar('Mail', `${badge(addr, 'blue')}${badge(`quota ${m.quota} MB`, 'grey')}${btn('Workspace email', 'go', 'btn-small', 'data-page="email"')}`)}${mailWorkspace(false)}`;
+}
+
+function standaloneFilesView(): string {
+  const b = bucket(ui.projectId) || state.buckets[0];
+  if (!b) return `${standaloneTopbar('Files', '')}<div class="card empty"><h3>No bucket specified</h3>${btn('Open workspace storage', 'go', 'btn-primary', 'data-page="storageIndex"')}</div>`;
+  ui.storageBucketId = b.id;
+  const s = service(b.storageId);
+  return `${standaloneTopbar('Files', `${badge(b.name, 'blue')}${badge('S3 · Garage on VPS', 'grey')}${btn('Workspace storage', 'go', 'btn-small', 'data-page="storageIndex"')}`)}${s ? storageFilesView(s) : '<div class="card empty"><h3>Storage service not found</h3></div>'}`;
 }
 
 function emailSettingsTab(): string {
@@ -912,16 +926,16 @@ function storageOverview(): string {
 
 function storageServiceView(s: ServiceRec): string {
   const p = project(s.projectId);
-  const tabs = [['overview', 'Overview'], ['buckets', 'Buckets'], ['files', 'Files'], ['access', 'Access'], ['usage', 'Usage'], ['settings', 'Settings']];
-  return `<button class="back" data-action="openProject" data-id="${s.projectId}">${ico('back', 15)} ${esc(p?.name || 'Project')}</button>${heading('STORAGE / PRODUCTION', s.name, `${esc(s.provider || 'External storage')} · ${esc(p?.name || 'Project')} · No host filesystem access`, ui.tab === 'buckets' ? btn(`${ico('plus', 15)} New bucket`, 'openModal', 'btn-primary', 'data-modal="bucketCreate"') : ui.tab === 'files' ? btn(`${ico('upload', 15)} Upload file`, 'openModal', 'btn-primary', 'data-modal="objectUpload"') : '')}<div class="tabs">${tabs.map(([k, t]) => `<button class="tab ${ui.tab === k ? 'active' : ''}" data-action="serviceTab" data-tab="${k}">${t}</button>`).join('')}</div>${ui.tab === 'overview' ? storageServiceOverview(s) : ui.tab === 'buckets' ? storageBucketsView(s) : ui.tab === 'files' ? storageFilesView(s) : ui.tab === 'access' ? storageAccessView(s) : ui.tab === 'usage' ? storageUsageView(s) : storageSettingsView(s)}`;
+  const tabs = [['overview', 'Overview'], ['buckets', 'Buckets'], ['access', 'Access'], ['usage', 'Usage'], ['settings', 'Settings']];
+  return `<button class="back" data-action="openProject" data-id="${s.projectId}">${ico('back', 15)} ${esc(p?.name || 'Project')}</button>${heading('STORAGE / PRODUCTION', s.name, `${esc(s.provider || 'External storage')} · ${esc(p?.name || 'Project')} · No host filesystem access`, ui.tab === 'buckets' ? btn(`${ico('plus', 15)} New bucket`, 'openModal', 'btn-primary', 'data-modal="bucketCreate"') : ui.tab === 'files' ? btn(`${ico('upload', 15)} Upload file`, 'openModal', 'btn-primary', 'data-modal="objectUpload"') : '')}<div class="tabs">${tabs.map(([k, t]) => `<button class="tab ${ui.tab === k ? 'active' : ''}" data-action="serviceTab" data-tab="${k}">${t}</button>`).join('')}</div>${ui.tab === 'overview' ? storageServiceOverview(s) : ui.tab === 'buckets' ? storageBucketsView(s) : ui.tab === 'access' ? storageAccessView(s) : ui.tab === 'usage' ? storageUsageView(s) : storageSettingsView(s)}`;
 }
 
 function storageServiceOverview(s: ServiceRec): string {
-  return `${storageBanner()}<div class="grid three" style="margin-bottom:16px">${statsCard('folder', bucketsFor(s.id).length, 'Buckets', 'Private by default')}${statsCard('file', storageLive(s.id).files, 'Objects in Garage', ui.storageStats ? 'Real uploaded objects' : 'Loading live count…')}${statsCard('harddrive', bytesHuman(storageLive(s.id).bytes), 'Storage used', ui.storageStats ? 'Real bytes in Garage' : 'Loading live usage…')}</div><div class="store-grid"><div class="card"><div class="row space"><h3 class="section-title">Storage buckets</h3>${btn('See all buckets', 'serviceTab', 'btn-small', 'data-tab="buckets"')}</div><div class="divider"></div>${bucketsFor(s.id).map((b) => `<div class="storage-attach"><div class="row"><span class="status-icon gold">${ico('folder', 17)}</span><div><strong class="small">${esc(b.name)}</strong><div class="detail">${esc(b.purpose || 'Managed object storage')} · ${objectsFor(b.id).filter((o) => !o.isFolder).length} files</div></div></div><div class="row">${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}${btn('Browse', 'storageBrowseTab', 'btn-small', `data-svc="${s.id}"`)}</div></div>`).join('') || '<p class="muted">No buckets yet.</p>'}</div><div class="col" style="gap:16px"><div class="card"><h3 class="section-title">Production connection</h3><p class="muted small">Use an external S3-compatible provider for small VPS installations. The platform controls access through resource-bound credentials.</p><div class="divider"></div><div class="kv"><span class="k">Provider</span><span class="v">${esc(s.provider)}</span><span class="k">Credentials</span><span class="v">Connected · cloudlane-objects key</span><span class="k">Data path</span><span class="v">Bucket/object key</span></div></div><div class="card"><h3 class="section-title">Maid Finder example</h3><p class="muted small">KYC ID front/back and selfie remain private. Profile photos use a separate bucket. The Express API authorizes temporary upload/read URLs.</p>${btn('View access rules', 'serviceTab', 'btn-small', 'data-tab="access"')}</div></div></div>`;
+  return `${storageBanner()}<div class="grid three" style="margin-bottom:16px">${statsCard('folder', bucketsFor(s.id).length, 'Buckets', 'Private by default')}${statsCard('file', storageLive(s.id).files, 'Objects in Garage', ui.storageStats ? 'Real uploaded objects' : 'Loading live count…')}${statsCard('harddrive', bytesHuman(storageLive(s.id).bytes), 'Storage used', ui.storageStats ? 'Real bytes in Garage' : 'Loading live usage…')}</div><div class="store-grid"><div class="card"><div class="row space"><h3 class="section-title">Storage buckets</h3>${btn('See all buckets', 'serviceTab', 'btn-small', 'data-tab="buckets"')}</div><div class="divider"></div>${bucketsFor(s.id).map((b) => `<div class="storage-attach"><div class="row"><span class="status-icon gold">${ico('folder', 17)}</span><div><strong class="small">${esc(b.name)}</strong><div class="detail">${esc(b.purpose || 'Managed object storage')} · ${objectsFor(b.id).filter((o) => !o.isFolder).length} files</div></div></div><div class="row">${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}${btn('Browse', 'storageBrowseTab', 'btn-small', `data-bucket="${b.id}"`)}</div></div>`).join('') || '<p class="muted">No buckets yet.</p>'}</div><div class="col" style="gap:16px"><div class="card"><h3 class="section-title">Production connection</h3><p class="muted small">Use an external S3-compatible provider for small VPS installations. The platform controls access through resource-bound credentials.</p><div class="divider"></div><div class="kv"><span class="k">Provider</span><span class="v">${esc(s.provider)}</span><span class="k">Credentials</span><span class="v">Connected · cloudlane-objects key</span><span class="k">Data path</span><span class="v">Bucket/object key</span></div></div><div class="card"><h3 class="section-title">Maid Finder example</h3><p class="muted small">KYC ID front/back and selfie remain private. Profile photos use a separate bucket. The Express API authorizes temporary upload/read URLs.</p>${btn('View access rules', 'serviceTab', 'btn-small', 'data-tab="access"')}</div></div></div>`;
 }
 
 function storageBucketsView(s: ServiceRec): string {
-  return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Buckets</h3><p class="muted xs">Buckets are resources, not server directories. New buckets start private.</p></div>${btn(`${ico('plus', 15)} Create bucket`, 'openModal', 'btn-primary', 'data-modal="bucketCreate"')}</div><div class="grid two">${bucketsFor(s.id).map((b) => `<article class="card store-card" data-action="storageOpenBucket" data-id="${b.id}"><div class="row space"><span class="status-icon gold">${ico('folder', 20)}</span>${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}</div><div class="name mono" style="margin-top:15px">${esc(b.name)}</div><p>${esc(b.purpose || 'Application objects')}</p><div class="divider"></div><div class="row space"><span class="muted xs">${objectsFor(b.id).filter((o) => !o.isFolder).length} files · ${bytesHuman(totalBytes(b.id))}</span>${btn('Browse files →', 'storageBrowseTab', 'btn-small', `data-svc="${s.id}"`)}</div></article>`).join('') || '<div class="card empty">Create your first private bucket.</div>'}</div><p class="hint">In production, quotas, ownership, provider credentials, and encryption policies are enforced by backend services, not browser code.</p>`;
+  return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Buckets</h3><p class="muted xs">Buckets are resources, not server directories. New buckets start private.</p></div>${btn(`${ico('plus', 15)} Create bucket`, 'openModal', 'btn-primary', 'data-modal="bucketCreate"')}</div><div class="grid two">${bucketsFor(s.id).map((b) => `<article class="card store-card" data-action="storageOpenBucket" data-id="${b.id}"><div class="row space"><span class="status-icon gold">${ico('folder', 20)}</span>${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}</div><div class="name mono" style="margin-top:15px">${esc(b.name)}</div><p>${esc(b.purpose || 'Application objects')}</p><div class="divider"></div><div class="row space"><span class="muted xs">${objectsFor(b.id).filter((o) => !o.isFolder).length} files · ${bytesHuman(totalBytes(b.id))}</span>${btn('Browse files →', 'storageBrowseTab', 'btn-small', `data-bucket="${b.id}"`)}</div></article>`).join('') || '<div class="card empty">Create your first private bucket.</div>'}</div><p class="hint">In production, quotas, ownership, provider credentials, and encryption policies are enforced by backend services, not browser code.</p>`;
 }
 
 async function loadStorageStats(): Promise<void> {
@@ -1876,8 +1890,12 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       break;
     }
     case 'storageBrowseTab': {
-      const svcId = el.dataset.svc || ui.serviceId;
-      window.open(`/services/${svcId}?tab=files`, '_blank', 'noopener');
+      const bid = el.dataset.bucket || ui.storageBucketId;
+      window.open(`/files/${bid}`, '_blank', 'noopener');
+      break;
+    }
+    case 'filesCloseWindow': {
+      window.close();
       break;
     }
     case 'mailSettingsSave': {
@@ -2310,8 +2328,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       ui.storageSearch = '';
       ui.storageListing = null;
       ui.storageListingTried = false;
-      go('service', null, b.storageId, 'files');
-      void loadStorageListing();
+      window.open(`/files/${b.id}`, '_blank', 'noopener');
       return;
     }
     case 'storagePrefix': {
@@ -2777,17 +2794,27 @@ function render(): void {
   const oldPreview = document.getElementById('preview-frame') as HTMLIFrameElement | null;
   const sv = ui.page === 'service' ? service(ui.serviceId) : null;
   if (sv && sv.kind === 'storage' && !ui.storageStatsTried && !ui.storageStatsLoading) void loadStorageStats();
-  if (sv && sv.kind === 'storage' && ui.tab === 'files' && !ui.storageListingTried && !ui.storageListLoading && !ui.storageListing) void loadStorageListing();
+  if (ui.page === 'filesApp') {
+    const rb = bucket(ui.projectId);
+    if (rb && ui.storageBucketId !== rb.id) {
+      ui.storageBucketId = rb.id; ui.storagePrefix = ''; ui.storageSearch = '';
+      ui.storageListing = null; ui.storageListingTried = false;
+    }
+  }
+  if (((sv && sv.kind === 'storage' && ui.tab === 'files') || ui.page === 'filesApp') && !ui.storageListingTried && !ui.storageListLoading && !ui.storageListing) void loadStorageListing();
   const pageFns: Record<string, () => string> = {
     overview, projects: projectsView, project: projectView, service: serviceView,
     databases: () => servicesIndex('database'), cron: () => servicesIndex('cron'),
-    domains: domainsView, domainDetail: domainDetailView, email: emailView, mailbox: mailboxPageView,
+    domains: domainsView, domainDetail: domainDetailView, email: emailView,
+    mailbox: standaloneMailboxView, filesApp: standaloneFilesView,
     servers: serversView, activity: activityView, settings: settingsView,
     storageIndex: storageOverview, docs: docsView,
   };
   const page = (pageFns[ui.page as string] || overview)();
-  const nextHtml =
-    `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div>${appFooter()}</main></div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`;
+  const standalone = ui.page === 'mailbox' || ui.page === 'filesApp';
+  const nextHtml = standalone
+    ? `<div class="standalone">${page}</div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`
+    : `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div>${appFooter()}</main></div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`;
   if (nextHtml === lastRenderedHtml) {
     renderToast();
     return;
@@ -2803,7 +2830,7 @@ function render(): void {
   renderToast();
   if (looping) console.warn('[cloudlane] frequent re-render; identity-render guard active');
   const fab = root.querySelector('.ai-fab') as HTMLElement | null;
-  if (!fab) {
+  if (!standalone && !fab) {
     const el = document.createElement('button');
     el.className = 'ai-fab';
     el.dataset.action = 'assistantOpen';
