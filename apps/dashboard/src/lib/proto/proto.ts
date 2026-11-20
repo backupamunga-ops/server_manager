@@ -127,7 +127,7 @@ let ui: Record<string, unknown> = {
   termRole: 'developer', termSession: null as null | { serviceId: string; startedAt: number; expiresAt: number; entries: { kind: string; text: string }[] },
   sqlDraft: '', sqlResult: null as null | { serviceId: string; blocked: boolean; columns: string[]; rows: unknown[][]; message: string },
   storageBucketId: null as string | null, storagePrefix: '', storageSearch: '',
-  confirmBox: null as null | { message: string; danger: boolean; resolve: (v: boolean) => void },
+  confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   busy: null as string | null,
 };
 
@@ -931,17 +931,20 @@ function settingsView(): string {
     `<div class="setting-grid"><div class="card"><h3 class="section-title">Design direction</h3><p class="muted small">Simple defaults, progressive disclosure, and contextual actions. Keep Projects, Domains, Databases, Email and Cron Jobs accessible from the main sidebar.</p></div><div class="card"><h3 class="section-title">Planned capabilities</h3><p class="muted small">Project-scoped file manager, stronger recovery automation, multi-server agents, teams and reseller features will be added in phases.</p>${badge('Roadmap · not yet functional', 'blue')}</div></div>`;
 }
 /* ── custom confirm (replaces native confirm()) — promise-based, styled ── */
-function confirmModal(message: string, danger = false): Promise<boolean> {
+function confirmModal(message: string, danger = false, typedName = ''): Promise<boolean> {
   return new Promise((resolve) => {
-    ui.confirmBox = { message, danger, resolve };
+    ui.confirmBox = { message, danger, typedName: typedName || undefined, resolve };
     render();
   });
 }
 
 function confirmModalView(): string {
-  const cb = ui.confirmBox as { message: string; danger: boolean; resolve: (v: boolean) => void } | null;
+  const cb = ui.confirmBox as { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void } | null;
   if (!cb) return '';
-  return `<div class="modal-wrap" data-action="confirmAnswer"><div class="modal" data-confirm-card="1" style="max-width:440px" role="dialog" aria-modal="true" aria-label="Confirm"><div class="modal-head"><div><h2>${cb.danger ? 'Remove this?' : 'Please confirm'}</h2><p>${esc(cb.message)}</p></div><button class="icon-btn" data-action="confirmAnswer" data-value="0" aria-label="Close dialog">${ico('close', 18)}</button></div><div class="modal-footer" style="margin:0 -24px -24px"><button class="btn" data-action="confirmAnswer" data-value="0">Cancel</button><button class="btn ${cb.danger ? 'btn-danger' : 'btn-primary'}" data-action="confirmAnswer" data-value="1">Confirm</button></div></div></div>`;
+  const typed = cb.typedName
+    ? `<div class="modal-body" style="padding-top:0"><label for="confirmTypeInput" style="display:block;margin-bottom:8px" class="xs muted">Type <strong style="color:var(--danger);font-family:ui-monospace,monospace">${esc(cb.typedName)}</strong> to confirm deletion</label><input id="confirmTypeInput" class="confirm-type-input" data-expected="${attr(cb.typedName)}" autocomplete="off" spellcheck="false" placeholder="${attr(cb.typedName)}" style="width:100%" /></div>`
+    : '';
+  return `<div class="modal-wrap" data-action="confirmAnswer"><div class="modal" data-confirm-card="1" style="max-width:460px" role="dialog" aria-modal="true" aria-label="Confirm"><div class="modal-head"><div><h2>${cb.danger ? 'Remove this?' : 'Please confirm'}</h2><p>${esc(cb.message)}</p></div><button class="icon-btn" data-action="confirmAnswer" data-value="0" aria-label="Close dialog">${ico('close', 18)}</button></div>${typed}<div class="modal-footer"><button class="btn" data-action="confirmAnswer" data-value="0">Cancel</button><button class="btn ${cb.danger ? 'btn-danger' : 'btn-primary'}" data-action="confirmAnswer" data-value="1" ${cb.typedName ? 'disabled' : ''}>${cb.typedName ? 'Delete permanently' : 'Confirm'}</button></div></div></div>`;
 }
 
 /* ── modals — verbatim from the prototype (final merged layer) ── */
@@ -1551,6 +1554,10 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       // backdrop clicks cancel; button clicks carry their data-value
       const value = onButton ? onButton.getAttribute('data-value') === '1' : false;
       if (!onButton && (event.target as HTMLElement).closest('[data-confirm-card]')) break;
+      if (value && cb && cb.typedName) {
+        const inp = document.getElementById('confirmTypeInput') as HTMLInputElement | null;
+        if (!inp || inp.value.trim() !== cb.typedName) break;
+      }
       ui.confirmBox = null;
       cb?.resolve(value);
       break;
@@ -1812,7 +1819,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       const m = state.mailboxes.find((x) => x.id === id);
       if (!m) return;
       const z = domainZone(m.zoneId);
-      if (!(await confirmModal(`Delete mailbox ${m.local}@${z?.name} and any aliases pointing to it?`, true))) break;
+      if (!(await confirmModal(`Delete mailbox ${m.local}@${z?.name} and any aliases pointing to it?`, true, `${m.local}@${z?.name || ''}`))) break;
       void apply('deleteMailbox', { mailboxId: id }).then((ok) => {
         if (ok) { render(); flash('Mailbox removed.'); }
       });
@@ -1829,7 +1836,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       const z = domainZone(id);
       if (!z) return;
       if (zoneHostnames(id).some((h) => h.serviceId)) { flash('Disconnect all project hostnames before removing this domain.', true); return; }
-      if (!(await confirmModal(`Remove domain ${z.name} and all its DNS records and email accounts?`, true))) break;
+      if (!(await confirmModal(`Remove domain ${z.name} and all its DNS records and email accounts?`, true, z.name))) break;
       void apply('deleteZone', { zoneId: id }).then((ok) => {
         if (ok) { flash('Domain removed from the registry.'); go('domains'); }
       });
@@ -2609,6 +2616,11 @@ async function onChange(e: Event): Promise<void> {
 }
 function onInput(e: Event): void {
   const target = e.target as HTMLInputElement;
+  if (target.id === 'confirmTypeInput') {
+    const btn = (target.closest('.modal') as HTMLElement | null)?.querySelector('[data-action="confirmAnswer"][data-value="1"]') as HTMLButtonElement | null;
+    if (btn) btn.disabled = target.value.trim() !== target.getAttribute('data-expected');
+    return;
+  }
   if (target.id === 'projectSearch') {
     ui.search = target.value;
     const el = document.getElementById('projectResults');
@@ -2757,7 +2769,8 @@ document.addEventListener('click', (e) => {
   const id = el.getAttribute('data-id') || '';
   if (!id) return;
   void (async () => {
-    if (!(await confirmModal('Delete this project? Every service inside it (containers, routes, databases, history) is removed. This cannot be undone.', true))) return;
+    const pname = state.projects.find((x) => x.id === id)?.name || 'this project';
+    if (!(await confirmModal(`Delete project ${pname}? Every service inside it (containers, routes, databases, history) is removed. This cannot be undone.`, true, pname))) return;
     const ok = await apply('deleteProject', { projectId: id });
     if (ok) { ui.page = 'projects'; void render(); }
   })();
@@ -2771,7 +2784,8 @@ document.addEventListener('click', (e) => {
   e.stopPropagation();
   const id = el.getAttribute('data-id') || '';
   void (async () => {
-    if (!(await confirmModal('Delete this service? Routes, database users and deployments are removed. This cannot be undone.', true))) return;
+    const sname = state.services.find((x) => x.id === id)?.name || 'this service';
+    if (!(await confirmModal(`Delete service ${sname}? Routes, database users and deployments are removed. This cannot be undone.`, true, sname))) return;
     const ok = await apply('deleteService', { serviceId: id });
     if (ok) { ui.page = 'projects'; void render(); }
   })();
