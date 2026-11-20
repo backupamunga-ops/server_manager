@@ -17,8 +17,33 @@
     messages: [],
     settings: { ...settingsDefault, ...(stored.settings || {}) },
     folder: 'inbox', filter: 'all', search: '', account: 'all', selectedId: null,
-    draftEditingId: null, lastAiReply: '', mobileReading: false, loaded: false
+    draftEditingId: null, lastAiReply: '', mobileReading: false, loaded: false, composeAttachments: []
   };
+
+  const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
+
+  function renderComposeAttachments() {
+    const host = document.getElementById('composeAttachments');
+    if (!host) return;
+    host.innerHTML = state.composeAttachments.map((a, i) => `<span class="attach-chip">${icon('file','small')}<strong>${safe(a.name)}</strong><small>${fmtSize(a.file.size)}</small><button type="button" data-remove-attach="${i}" aria-label="Remove ${safe(a.name)}">✕</button></span>`).join('');
+  }
+
+  async function uploadComposeAttachments() {
+    const out = [];
+    for (const item of state.composeAttachments) {
+      const fd = new FormData();
+      fd.append('file', item.file, item.name);
+      const res = await fetch(API + '/mail/attachments', { method: 'POST', body: fd });
+      if (res.status === 401) { window.location.href = '/login'; throw new Error('unauthorized'); }
+      if (!res.ok) {
+        let msg = 'Attachment upload failed';
+        try { msg = (await res.json()).message ?? msg; } catch {}
+        throw new Error(msg);
+      }
+      out.push(await res.json());
+    }
+    return out;
+  }
 
   async function api(path, opts = {}) {
     const res = await fetch(API + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -63,6 +88,17 @@
   const icon = (name, extra = '') => `<svg class="icon ${extra}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
   const escapeHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const safe = escapeHtml;
+  const SIDEBAR_KEY = 'drevanta-mail-sidebar';
+  function applyCollapse() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(SIDEBAR_KEY) || '{}'); } catch {}
+    document.querySelectorAll('[data-collapsible]').forEach(el => { el.hidden = !!saved[el.dataset.collapsible]; });
+    document.querySelectorAll('.collapse-head').forEach(h => {
+      const collapsed = !!saved[h.dataset.collapse];
+      h.classList.toggle('collapsed', collapsed);
+      h.setAttribute('aria-expanded', String(!collapsed));
+    });
+  }
   function readStorage() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } }
   function persist() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ settings: state.settings })); } catch {} }
   const displayFolders = { inbox: 'Inbox', starred: 'Starred', sent: 'Sent', drafts: 'Drafts', archive: 'Archive', spam: 'Spam', trash: 'Trash' };
@@ -105,11 +141,10 @@
   function ensureSelection(list) { if (!list.some(m => m.id === state.selectedId)) state.selectedId = list.length ? list[0].id : null; }
 
   function renderAccountMenu() {
-    const current = accounts.find(a => a.email === state.account);
-    $('currentWorkspace').textContent = current ? current.short : 'All workspaces';
-    $('currentAccount').textContent = current ? current.email : 'All mailboxes';
-    $('accountMenu').innerHTML = `<div class="account-menu-header">SWITCH MAILBOX</div>` +
-      [{ email:'all', name:'All mailboxes', short:'Across all your accounts' }, ...accounts].map(a => `<button type="button" class="account-item ${state.account === a.email ? 'selected' : ''}" data-account="${safe(a.email)}">${icon(a.email === 'all' ? 'grid' : 'mail','small')}<span><strong>${safe(a.name)}</strong><small>${safe(a.email === 'all' ? a.short : a.email)}</small></span>${state.account === a.email ? icon('check','small') : ''}</button>`).join('');
+    const nav = document.getElementById('accountNav');
+    if (nav) {
+      nav.innerHTML = [{ email:'all', name:'All mailboxes', short:'Across all your accounts' }, ...accounts].map(a => `<button type="button" class="nav-item account-item ${state.account === a.email ? 'active' : ''}" data-account="${safe(a.email)}">${icon(a.email === 'all' ? 'grid' : 'mail')}<span>${safe(a.name)}</span></button>`).join('');
+    }
     $('composeFrom').innerHTML = accounts.map(a => `<option value="${safe(a.email)}">${safe(a.email)}</option>`).join('');
   }
   function renderNav() {
@@ -144,7 +179,7 @@
       return;
     }
     const index = list.findIndex(x => x.id === m.id);
-    const attachmentMarkup = m.attachments.length ? `<div class="reader-attachments"><div class="attachment-title">${icon('paperclip')} ${m.attachments.length} ${m.attachments.length === 1 ? 'attachment' : 'attachments'}</div><div class="attachment-cards">${m.attachments.map(a => `<button type="button" class="attachment-card" data-reader-action="attachment" title="Demo only: no file is attached"> <span class="attachment-icon">${icon('file')}</span><span class="attachment-name"><strong>${safe(a.name)}</strong><small>${safe(a.size)} · Demo file</small></span></button>`).join('')}</div></div>` : '';
+    const attachmentMarkup = m.attachments.length ? `<div class="reader-attachments"><div class="attachment-title">${icon('paperclip')} ${m.attachments.length} ${m.attachments.length === 1 ? 'attachment' : 'attachments'}</div><div class="attachment-cards">${m.attachments.map(a => a.key ? `<a class="attachment-card" href="${API}/mail/attachments/download?key=${encodeURIComponent(a.key)}" title="Download ${safe(a.name)}"><span class="attachment-icon">${icon('file')}</span><span class="attachment-name"><strong>${safe(a.name)}</strong><small>${safe(a.size)} · Download</small></span></a>` : `<button type="button" class="attachment-card" data-reader-action="attachment" title="Demo only: no file is attached"> <span class="attachment-icon">${icon('file')}</span><span class="attachment-name"><strong>${safe(a.name)}</strong><small>${safe(a.size)} · Demo file</small></span></button>`).join('')}</div></div>` : '';
     const repliesMarkup = m.thread && m.thread.length ? `<div class="reader-replies"><strong>${m.thread.length} earlier messages in this conversation</strong>${m.thread.map(t => `<div class="reply-history"><span>Earlier message from</span><strong>${safe(t.from)}</strong><p>${safe(t.snippet)}</p></div>`).join('')}</div>` : '';
     const isTrash = m.folder === 'trash';
     const isDraft = m.folder === 'drafts';
@@ -223,7 +258,7 @@
   function openComposer(mode = 'new', body = '') {
     hideAllOverlays();
     const m = selectedMessage();
-    $('composeForm').reset(); state.draftEditingId = null;
+    $('composeForm').reset(); state.draftEditingId = null; state.composeAttachments = []; renderComposeAttachments();
     $('composeHeading').textContent = mode === 'new' ? 'Compose email' : mode === 'forward' ? 'Forward email' : mode === 'draft' ? 'Edit draft' : 'Reply to email';
     const currentAccount = state.account !== 'all' ? state.account : (m?.account || accounts[0].email);
     $('composeFrom').value = currentAccount;
@@ -250,7 +285,10 @@
   async function createOutgoing(folder) {
     const vals = composeValues();
     if (!vals.to || !vals.subject || !vals.body) { toast('Add a recipient, subject, and message first'); return; }
-    const payload = { fromEmail: vals.account, to: vals.to, subject: vals.subject, body: vals.body };
+    const attachments = state.composeAttachments.length ? await uploadComposeAttachments() : [];
+    state.composeAttachments = []; renderComposeAttachments();
+    const attachmentsTool = attachments.map(a => ({ key: a.key, name: a.name, size: fmtSize(a.size) }));
+    const payload = { fromEmail: vals.account, to: vals.to, subject: vals.subject, body: vals.body, attachments: attachmentsTool };
     if (folder === 'drafts' && state.draftEditingId) {
       const old = state.messages.find(m => m.id === state.draftEditingId);
       state.draftEditingId = null;
@@ -270,7 +308,7 @@
       id: tempId, folder, account: vals.account, from: localName(vals.account), email: vals.account, to: vals.to,
       subject: vals.subject, body: vals.body, snippet: vals.body.replace(/\s+/g, ' ').slice(0, 95),
       date: new Date().toISOString(), unread: false, starred: false,
-      priority: false, labels: [], attachments: [], thread: []
+      priority: false, labels: [], attachments: attachmentsTool, thread: []
     };
     state.messages.unshift(optimistic);
     persist(); hideOverlay('compose'); setFolder(folder);
@@ -366,14 +404,12 @@
       if (list[i + (action==='next'?1:-1)]) selectMessage(list[i + (action==='next'?1:-1)].id);
     }
   });
-  $('accountButton').addEventListener('click', () => { const el=$('accountMenu'); el.hidden=!el.hidden; $('accountButton').setAttribute('aria-expanded',String(!el.hidden)); });
-  $('accountMenu').addEventListener('click', e => {
+  document.getElementById('accountNav').addEventListener('click', e => {
     const el = e.target.closest('[data-account]'); if (!el) return;
     state.account = el.dataset.account; state.selectedId=null; state.filter='all'; state.search=''; $('searchInput').value='';
-    $('accountMenu').hidden=true; $('accountButton').setAttribute('aria-expanded','false'); renderAccountMenu(); render(); closeMobileMenu();
+    renderAccountMenu(); render(); closeMobileMenu();
     document.querySelector('.mail-workspace').classList.remove('show-reader');
   });
-  document.addEventListener('click', e => { if (!$('accountSwitcher').contains(e.target)) { $('accountMenu').hidden=true; $('accountButton').setAttribute('aria-expanded','false'); } });
   $('mobileMenu').addEventListener('click', () => { $('sidebar').classList.add('mobile-open'); $('mobileOverlay').hidden=false; });
   $('mobileOverlay').addEventListener('click', closeMobileMenu);
   $('composeButton').addEventListener('click', () => { closeMobileMenu(); openComposer(); });
@@ -402,10 +438,38 @@
   $('saveDraftButton').addEventListener('click', () => createOutgoing('drafts'));
   $('composeAiButton').addEventListener('click', improveDraft);
   $('refreshButton').addEventListener('click', () => { reloadMessages(); });
+
+  const attachBtn = document.getElementById('attachButton');
+  const filesInput = document.getElementById('composeFiles');
+  if (attachBtn && filesInput) {
+    attachBtn.addEventListener('click', () => filesInput.click());
+    filesInput.addEventListener('change', e => {
+      for (const f of [...(e.target.files || [])]) {
+        if (f.size > 10 * 1024 * 1024) { toast(`${f.name} is over 10 MB — skipped`); continue; }
+        if (state.composeAttachments.length >= 5) { toast('Up to 5 attachments per message'); break; }
+        state.composeAttachments.push({ file: f, name: f.name });
+      }
+      e.target.value = '';
+      renderComposeAttachments();
+    });
+  }
+  document.addEventListener('click', e => {
+    const rm = e.target.closest('[data-remove-attach]');
+    if (rm) { state.composeAttachments.splice(Number(rm.dataset.removeAttach), 1); renderComposeAttachments(); }
+    const head = e.target.closest('.collapse-head');
+    if (head && !e.target.closest('#labelsInfo')) {
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem(SIDEBAR_KEY) || '{}'); } catch {}
+      saved[head.dataset.collapse] = !saved[head.dataset.collapse];
+      try { localStorage.setItem(SIDEBAR_KEY, JSON.stringify(saved)); } catch {}
+      applyCollapse();
+    }
+  });
+  applyCollapse();
   $('labelsInfo').addEventListener('click', () => toast('Labels are sample categories in this prototype'));
   $('resetDemoButton').addEventListener('click', () => { reloadMessages(); });
   document.addEventListener('keydown', e => {
-    if (e.key==='Escape') { hideAllOverlays();closeMobileMenu();$('accountMenu').hidden=true; return; }
+    if (e.key==='Escape') { hideAllOverlays();closeMobileMenu(); return; }
     if (e.target.closest('input,textarea,select,[contenteditable="true"]') || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key==='/' || e.key==='k') { e.preventDefault(); $('searchInput').focus(); }
     if (e.key.toLowerCase()==='n') { e.preventDefault(); openComposer(); }

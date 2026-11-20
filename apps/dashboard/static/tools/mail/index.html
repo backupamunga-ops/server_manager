@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#090e15" />
   <meta name="description" content="Aster Mail — a modern, AI-ready webmail prototype for hosting control panels and teams." />
   <title>Drevanta Mail</title>
+  <link rel="stylesheet" href="/tools/theme.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-400.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-500.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-600.css" />
@@ -60,22 +61,15 @@
   </svg>
   <div class="app-shell" id="appShell">
     <aside class="sidebar" id="sidebar">
-      <div class="brand-row">
-        <div class="brand-icon"><span class="brand-bars"><i></i><i></i><i></i></span></div>
-        <div class="brand-name">drevanta<span>mail</span><span class="brand-dot">.</span></div>
-        <span class="brand-version">BETA</span>
-      </div>
-      <div class="workspace-switcher" id="accountSwitcher">
-        <button type="button" class="workspace-button" id="accountButton" aria-label="Choose mailbox" aria-expanded="false">
-          <span class="workspace-avatar">D</span>
-          <span class="workspace-text"><strong id="currentWorkspace">Workspace</strong><small id="currentAccount">All mailboxes</small></span>
-          <svg class="icon small"><use href="#i-chevron-down"/></svg>
-        </button>
-        <div class="account-menu" id="accountMenu" hidden></div>
+      <div class="brand-row brand-single">
+        <img class="brand-logo" src="/tools/mail/logo.png" alt="Drevanta logo" width="34" height="34" />
+        <div class="brand-text"><strong>Drevanta Mail</strong></div>
       </div>
       <button class="compose-btn" id="composeButton" type="button"><svg class="icon"><use href="#i-plus"/></svg><span>Compose message</span><kbd>N</kbd></button>
-      <div class="sidebar-section-title">MAILBOX <span></span></div>
-      <nav class="nav-list" id="folderNav" aria-label="Mail folders">
+      <div class="sidebar-section-title collapse-head" data-collapse="accounts" role="button" tabindex="0" aria-expanded="true">ACCOUNTS <svg class="icon small chev"><use href="#i-chevron-down"/></svg></div>
+      <nav class="nav-list" id="accountNav" data-collapsible="accounts" aria-label="Mailboxes"></nav>
+      <div class="sidebar-section-title collapse-head" data-collapse="mailbox" role="button" tabindex="0" aria-expanded="true">MAILBOX <svg class="icon small chev"><use href="#i-chevron-down"/></svg></div>
+      <nav class="nav-list" id="folderNav" data-collapsible="mailbox" aria-label="Mail folders">
         <button class="nav-item active" type="button" data-folder="inbox"><svg class="icon"><use href="#i-inbox"/></svg><span>Inbox</span><span class="nav-count" id="inboxCount">0</span></button>
         <button class="nav-item" type="button" data-folder="starred"><svg class="icon"><use href="#i-star"/></svg><span>Starred</span></button>
         <button class="nav-item" type="button" data-folder="sent"><svg class="icon"><use href="#i-send"/></svg><span>Sent</span></button>
@@ -84,8 +78,8 @@
         <button class="nav-item" type="button" data-folder="spam"><svg class="icon"><use href="#i-alert"/></svg><span>Spam</span></button>
         <button class="nav-item" type="button" data-folder="trash"><svg class="icon"><use href="#i-trash"/></svg><span>Trash</span></button>
       </nav>
-      <div class="sidebar-section-title labels-title">LABELS <button class="icon-button tiny-button" id="labelsInfo" type="button" title="About labels"><svg class="icon"><use href="#i-plus"/></svg></button></div>
-      <nav class="nav-list labels-nav" id="labelNav" aria-label="Labels">
+      <div class="sidebar-section-title labels-title collapse-head" data-collapse="labels" role="button" tabindex="0" aria-expanded="true">LABELS <button class="icon-button tiny-button" id="labelsInfo" type="button" title="Labels group messages across folders"><svg class="icon"><use href="#i-plus"/></svg></button><svg class="icon small chev"><use href="#i-chevron-down"/></svg></div>
+      <nav class="nav-list labels-nav" id="labelNav" data-collapsible="labels" aria-label="Labels">
         <button class="nav-item" type="button" data-folder="label:Clients"><span class="label-dot violet"></span><span>Clients</span></button>
         <button class="nav-item" type="button" data-folder="label:Billing"><span class="label-dot orange"></span><span>Billing</span></button>
         <button class="nav-item" type="button" data-folder="label:Infrastructure"><span class="label-dot green"></span><span>Infrastructure</span></button>
@@ -146,7 +140,7 @@
   <div class="overlay" id="composeOverlay" hidden></div>
   <section class="compose-drawer" id="composeDrawer" role="dialog" aria-modal="true" aria-label="Compose message" aria-hidden="true">
     <div class="compose-header"><div><span class="title-overline">NEW CONVERSATION</span><h2 id="composeHeading">Compose email</h2></div><button type="button" class="icon-button" id="closeCompose" title="Close compose"><svg class="icon"><use href="#i-x"/></svg></button></div>
-    <form id="composeForm" class="compose-form"><div class="compose-field"><label for="composeFrom">From</label><select id="composeFrom" aria-label="Send from account"></select></div><div class="compose-field"><label for="composeTo">To</label><input type="email" id="composeTo" required placeholder="recipient@company.com"/></div><div class="compose-field"><label for="composeSubject">Subject</label><input id="composeSubject" required placeholder="What’s this about?"/></div><div class="compose-editor-wrap"><label for="composeBody">MESSAGE</label><textarea id="composeBody" required placeholder="Start writing your message..."></textarea></div><div class="compose-ai-tools"><button type="button" id="composeAiButton"><svg class="icon"><use href="#i-sparkle"/></svg> Improve draft <span>DEMO</span></button><span>AI writing assistance concept</span></div><div class="compose-footnote"><svg class="icon small"><use href="#i-shield"/></svg> Delivers instantly between workspace mailboxes. External domains start with the mail stack.</div><div class="compose-footer"><button type="button" class="secondary-btn" id="saveDraftButton">Save draft</button><button type="submit" class="primary-btn">Send demo email <svg class="icon"><use href="#i-send"/></svg></button></div></form>
+    <form id="composeForm" class="compose-form"><div class="compose-field"><label for="composeFrom">From</label><select id="composeFrom" aria-label="Send from account"></select></div><div class="compose-field"><label for="composeTo">To</label><input type="email" id="composeTo" required placeholder="recipient@company.com"/></div><div class="compose-field"><label for="composeSubject">Subject</label><input id="composeSubject" required placeholder="What’s this about?"/></div><div class="compose-editor-wrap"><label for="composeBody">MESSAGE</label><textarea id="composeBody" required placeholder="Start writing your message..."></textarea></div><div class="compose-attach-row"><input type="file" id="composeFiles" multiple hidden /><button type="button" class="attach-btn" id="attachButton" title="Attach files"><svg class="icon small"><use href="#i-paperclip"/></svg> Attach files</button><span class="attach-hint">Up to 10 MB per file · stored in workspace storage</span></div><div class="compose-attachments" id="composeAttachments" aria-live="polite"></div><div class="compose-ai-tools"><button type="button" id="composeAiButton"><svg class="icon"><use href="#i-sparkle"/></svg> Improve draft <span>DEMO</span></button><span>AI writing assistance concept</span></div><div class="compose-footnote"><svg class="icon small"><use href="#i-shield"/></svg> Delivers instantly between workspace mailboxes. External domains start with the mail stack.</div><div class="compose-footer"><button type="button" class="secondary-btn" id="saveDraftButton">Save draft</button><button type="submit" class="primary-btn">Send email <svg class="icon"><use href="#i-send"/></svg></button></div></form>
   </section>
 
   <!-- Settings dialog -->
@@ -159,6 +153,7 @@
     <div class="settings-note"><svg class="icon"><use href="#i-shield"/></svg><span>Messages are stored in the workspace database. Preferences stay in this browser.</span></div>
     <button type="button" class="primary-btn settings-done" id="settingsDone">Done</button>
   </section>
+  <script src="/tools/theme.js"></script>
   <script src="/tools/mail/app.js" defer></script>
 </body>
 </html>

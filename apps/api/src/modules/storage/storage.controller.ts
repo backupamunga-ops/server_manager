@@ -97,6 +97,8 @@ export class StorageController {
     const { bucket } = await this.ownBucket(user.userId, bucketId);
     const prefix = this.safePrefix(prefixRaw);
     const listing = await this.objects.list(bucket.name, prefix);
+    listing.folders = listing.folders.filter((f) => !f.key.startsWith('.mail/'));
+    listing.files = listing.files.filter((f) => !f.key.startsWith('.mail/'));
     if (deepRaw === '1') {
       // Full subtree walk for the standalone file manager's tree (capped).
       const nodes: Array<{ key: string; name: string; type: 'folder' | 'file'; size: number; lastModified: string | null }> = [];
@@ -107,12 +109,12 @@ export class StorageController {
         walks++;
         const lvl = await this.objects.list(bucket.name, step.prefix);
         for (const f of lvl.folders) {
-          if (nodes.length >= 1200) break;
+          if (nodes.length >= 1200 || f.key.startsWith('.mail/')) continue;
           nodes.push({ key: f.key, name: f.name, type: 'folder', size: 0, lastModified: null });
           if (step.depth < 5) queue.push({ prefix: f.key, depth: step.depth + 1 });
         }
         for (const f of lvl.files) {
-          if (nodes.length >= 1200) break;
+          if (nodes.length >= 1200 || f.key.startsWith('.mail/')) continue;
           nodes.push({ key: f.key, name: f.name, type: 'file', size: f.size, lastModified: f.lastModified });
         }
       }
@@ -191,7 +193,7 @@ export class StorageController {
     @Query('prefix') prefixRaw = '',
   ) {
     const { ws, bucket } = await this.ownBucket(user.userId, bucketId);
-    if (!file?.buffer?.length) throw new BadRequestException('No file in request.');
+    if (!file) throw new BadRequestException('No file in request.');
     const prefix = this.safePrefix(prefixRaw);
     const key = `${prefix}${this.safeName(file.originalname)}`;
     await this.objects.put(bucket.name, key, file.buffer, file.mimetype || 'application/octet-stream');

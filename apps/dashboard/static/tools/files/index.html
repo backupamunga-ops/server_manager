@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tools/theme.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/material-darker.min.css">
 <style>
@@ -1858,51 +1859,48 @@ body.resizing {
 .gridcard .meta { font-size: calc(var(--fs-xs) * var(--content-zoom)); }
 
 
-/* ═══════════ DREVANTA THEME (dark by default) ═══════════ */
+/* ═══════ Drevanta design-system bridge (driven by Settings → Appearance) ═══════ */
 :root, body.dark {
-  color-scheme: dark;
-  --bg: #090e15;
-  --surface: #0e1520;
-  --surface-2: #111b27;
-  --line: #243244;
-  --line-strong: #304256;
-  --ink: #eaf1fa;
-  --ink-2: #c9d5e4;
-  --ink-3: #a9b7c9;
-  --muted: #94a4b8;
-  --muted-2: #63758c;
-  --blue: #5ecfae;
-  --blue-hover: #8ce8c9;
-  --blue-bg: #133a35;
-  --blue-bg-hover: #173028;
-  --green-bg: #16362f;
-  --red-hover: #ff9caa;
-  --red-bg: #411e29;
-  --amber-bg: #322a1b;
-  --purple-bg: #31283f;
-  --pink: #e45584;
-  --pink-bg: #3a1f2c;
-  --teal-bg: #16362f;
-  --yellow-bg: #322a1b;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
-  --shadow-md: 0 4px 12px rgba(0,0,0,.4);
-  --shadow-lg: 0 12px 36px rgba(0,0,0,.5);
-  --shadow-xl: 0 24px 60px rgba(0,0,0,.55);
+  --bg: var(--dv-bg);
+  --surface: var(--dv-raised);
+  --surface-2: var(--dv-overlay);
+  --line: var(--dv-border);
+  --line-strong: var(--dv-border-strong);
+  --ink: var(--dv-text);
+  --ink-2: var(--dv-secondary);
+  --ink-3: var(--dv-secondary);
+  --muted: var(--dv-muted);
+  --muted-2: var(--dv-disabled);
+  --blue: var(--dv-primary);
+  --blue-hover: var(--dv-primary-hover);
+  --blue-bg: var(--dv-primary-tint);
+  --blue-bg-hover: var(--dv-primary-tint);
+  --green-bg: var(--dv-success-bg);
+  --red-hover: var(--dv-danger);
+  --red-bg: var(--dv-danger-bg);
+  --amber-bg: var(--dv-warning-bg);
+  --purple-bg: var(--dv-info-bg);
+  --pink: var(--dv-danger);
+  --pink-bg: var(--dv-danger-bg);
+  --teal-bg: var(--dv-success-bg);
+  --yellow-bg: var(--dv-warning-bg);
+  --shadow-sm: var(--dv-shadow-sm);
+  --shadow-md: var(--dv-shadow-md);
+  --shadow-lg: var(--dv-shadow-md);
+  --shadow-xl: var(--dv-shadow-md);
 }
-.brandmark { background: linear-gradient(135deg,#b9fff0,#61b8a9 63%,#5e846b); color: #062820; }
-.brand span span { color: #87eacb; }
-.primary, .modal button.primary, .lightbtn.primary { background: var(--blue); color: #082720; }
-.primary:hover { background: var(--blue-hover); }
-.danger-action { background: #411e29 !important; color: #ff9caa !important; }
-.exticon { background: #1b2e43; color: #abcfff; }
-.fileicon { color: #8ab9ff; }
-.fileicon.folder { color: #eac880; }
-.tree-row:hover { background: #142232; }
-.tree-row.selected { background: #173028; }
-.navitem:hover { background: #152334; }
-.navitem.active { background: #173028; color: #c3fae7; }
-.CodeMirror { background: #0a1017 !important; color: #c9d5e4 !important; }
-.operation-progress, .task-progress { background: #263748; }
+.brandmark-img { border-radius: 8px; box-shadow: var(--dv-shadow-sm); }
+.primary, .modal button.primary, .lightbtn.primary { background: var(--dv-primary); color: var(--dv-palette-button-text, #fff); }
+.primary:hover, .modal button.primary:hover { background: var(--dv-primary-hover); }
+.exticon { background: var(--dv-info-bg); color: var(--dv-info); }
+.tree-row.selected { background: var(--dv-primary-tint); }
+.navitem.active { background: var(--dv-primary-tint); color: var(--dv-primary); }
+.navitem:hover { background: var(--dv-sunken); }
+.danger-action { background: var(--dv-danger-bg) !important; color: var(--dv-danger) !important; }
+.modal, .modaldialog { border-radius: 10px; }
+.overlay, #overlay { background: rgb(2 6 23 / .55); }
+.toast { background: var(--dv-raised); border: 1px solid var(--dv-border-default); color: var(--dv-text); border-radius: 8px; box-shadow: var(--dv-shadow-md); }
+button:focus-visible { outline-color: var(--dv-focus-ring); }
 </style>
 </head>
 <body>
@@ -1914,7 +1912,7 @@ body.resizing {
   <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
     <div class="brand">
       <button class="sidebar-close" aria-label="Close sidebar" onclick="closeMobileSidebar()">✕</button>
-      <div class="brandmark" aria-hidden="true">◈</div>
+      <img class="brandmark brandmark-img" src="/tools/files/logo.png" alt="Drevanta logo" width="26" height="26" />
       <span>drevanta<span>files</span></span>
     </div>
 
@@ -2127,6 +2125,7 @@ body.resizing {
   <div id="activityList"></div>
 </div>
 
+<script src="/tools/theme.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/mode/loadmode.min.js"></script>
@@ -2163,6 +2162,7 @@ function parentKeyOf(key) {
 function prefixOf(folderId) { return folderId === 'root' ? '' : folderId; }
 
 function buildFromDeep(nodes, bucketName) {
+  nodes = nodes.filter(nd => !nd.key.startsWith('.mail/'));
   const out = [{ id: 'root', name: bucketName || 'Home', type: 'folder', parent: null }];
   for (const nd of nodes) {
     if (nd.type === 'folder') {

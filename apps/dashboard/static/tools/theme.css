@@ -1,0 +1,115 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Drevanta design system — shared token layer for the standalone tool
+   windows (Drevanta Mail, Drevanta Files). The palette and mode are
+   managed in ONE place: Workspace → Settings → Appearance, stored in
+   localStorage("cloudlane-appearance-v110") and mirrored onto
+   <html data-palette="…" class="dark">. Tool pages only consume the
+   --dv-* custom properties defined here; they never hard-code colors.
+   Values are the exact token matrix from the design system document.
+   ═══════════════════════════════════════════════════════════════════ */
+@import url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-400.css');
+@import url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-500.css');
+@import url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-600.css');
+@import url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-700.css');
+@import url('https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.8/latin-400.css');
+@import url('https://cdn.jsdelivr.net/npm/@fontsource/jetbrains-mono@5.2.8/latin-500.css');
+
+:root {
+  --dv-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / .05);
+  --dv-shadow-md: 0 4px 6px -1px rgb(0 0 0 / .1), 0 2px 4px -2px rgb(0 0 0 / .1);
+}
+
+/* ── Original · Teal / Slate ─────────────────────────────── */
+html[data-palette="original"] {
+  --dv-bg: #fff; --dv-raised: #f8fafc; --dv-overlay: #fff; --dv-sunken: #f1f5f9;
+  --dv-text: #0f172a; --dv-secondary: #334155; --dv-muted: #64748b; --dv-disabled: #94a3b8;
+  --dv-border: #e2e8f0; --dv-border-default: #cbd5e1; --dv-border-strong: #94a3b8;
+  --dv-primary: #0d9488; --dv-primary-hover: #14b8a6; --dv-primary-active: #0f766e; --dv-primary-tint: #f0fdfa;
+  --dv-palette-button: #0d9488; --dv-palette-button-text: #ffffff; --dv-palette-on-tint: #0d9488; --dv-focus-ring: #14b8a6;
+}
+html.dark[data-palette="original"] {
+  --dv-bg: #020617; --dv-raised: #0f172a; --dv-overlay: #1e293b; --dv-sunken: #020617;
+  --dv-text: #f1f5f9; --dv-secondary: #cbd5e1; --dv-muted: #94a3b8; --dv-disabled: #475569;
+  --dv-border: #1e293b; --dv-border-default: #334155; --dv-border-strong: #475569;
+  --dv-primary: #2dd4bf; --dv-primary-hover: #14b8a6; --dv-primary-active: #0f766e; --dv-primary-tint: #134e4a;
+  --dv-palette-button: #0d9488; --dv-palette-button-text: #ffffff; --dv-palette-on-tint: #2dd4bf; --dv-focus-ring: #14b8a6;
+  --dv-shadow-sm: none; --dv-shadow-md: none;
+}
+
+/* ── Slate & Charcoal ────────────────────────────────────── */
+html[data-palette="slate"] {
+  --dv-bg: #d9d9d9; --dv-raised: #ebebeb; --dv-overlay: #f4f4f4; --dv-sunken: #cececf;
+  --dv-text: #0f172a; --dv-secondary: #3f4654; --dv-muted: #636873; --dv-disabled: #636873;
+  --dv-border: #84868f; --dv-border-default: #84878f; --dv-border-strong: #84878f;
+  --dv-primary: #333333; --dv-primary-hover: #444445; --dv-primary-active: #2c2d31; --dv-primary-tint: #d3d3d3;
+  --dv-palette-button: #333333; --dv-palette-button-text: #f1f5f9; --dv-palette-on-tint: #333333; --dv-focus-ring: #333333;
+}
+html.dark[data-palette="slate"] {
+  --dv-bg: #141621; --dv-raised: #262732; --dv-overlay: #353740; --dv-sunken: #10121f;
+  --dv-text: #d3d3d3; --dv-secondary: #adadb0; --dv-muted: #919296; --dv-disabled: #919296;
+  --dv-border: #707179; --dv-border-default: #6f7077; --dv-border-strong: #6f7077;
+  --dv-primary: #8c8e90; --dv-primary-hover: #818387; --dv-primary-active: #9a9c9d; --dv-primary-tint: #282932;
+  --dv-palette-button: #8c8e90; --dv-palette-button-text: #0f172a; --dv-palette-on-tint: #8e9092; --dv-focus-ring: #707172;
+  --dv-shadow-sm: none; --dv-shadow-md: none;
+}
+
+/* ── Sand & Saddle ───────────────────────────────────────── */
+html[data-palette="sand"] {
+  --dv-bg: #f8e5ce; --dv-raised: #fbf1e6; --dv-overlay: #fdf7f0; --dv-sunken: #ebdac5;
+  --dv-text: #0f172a; --dv-secondary: #434753; --dv-muted: #696a71; --dv-disabled: #696a71;
+  --dv-border: #8c8a8c; --dv-border-default: #8d8a8c; --dv-border-strong: #8d8a8c;
+  --dv-primary: #8b4513; --dv-primary-hover: #945528; --dv-primary-active: #723c18; --dv-primary-tint: #ecdbcb;
+  --dv-palette-button: #8b4513; --dv-palette-button-text: #f1f5f9; --dv-palette-on-tint: #8b4513; --dv-focus-ring: #8b4513;
+}
+html.dark[data-palette="sand"] {
+  --dv-bg: #331d16; --dv-raised: #422e27; --dv-overlay: #503d37; --dv-sunken: #271716;
+  --dv-text: #f7e1c7; --dv-secondary: #cfbaa4; --dv-muted: #b29d8a; --dv-disabled: #b29d8a;
+  --dv-border: #897a71; --dv-border-default: #8b796d; --dv-border-strong: #8b796d;
+  --dv-primary: #b9947a; --dv-primary-hover: #aa8973; --dv-primary-active: #c5a389; --dv-primary-tint: #503223;
+  --dv-palette-button: #b9947a; --dv-palette-button-text: #0f172a; --dv-palette-on-tint: #bd9c84; --dv-focus-ring: #a4714c;
+  --dv-shadow-sm: none; --dv-shadow-md: none;
+}
+
+/* ── Sage & Burgundy ─────────────────────────────────────── */
+html[data-palette="sage"] {
+  --dv-bg: #f0f3ef; --dv-raised: #f7f9f7; --dv-overlay: #fafbfa; --dv-sunken: #e4e7e4;
+  --dv-text: #0f172a; --dv-secondary: #424957; --dv-muted: #676d78; --dv-disabled: #676d78;
+  --dv-border: #8c9097; --dv-border-default: #8c9097; --dv-border-strong: #8c9097;
+  --dv-primary: #65000b; --dv-primary-hover: #721620; --dv-primary-active: #540511; --dv-primary-tint: #e4d9d8;
+  --dv-palette-button: #65000b; --dv-palette-button-text: #f1f5f9; --dv-palette-on-tint: #65000b; --dv-focus-ring: #65000b;
+}
+html.dark[data-palette="sage"] {
+  --dv-bg: #260413; --dv-raised: #361725; --dv-overlay: #442734; --dv-sunken: #1d0414;
+  --dv-text: #a8b8a3; --dv-secondary: #8f9587; --dv-muted: #8a8882; --dv-disabled: #8a8882;
+  --dv-border: #76686d; --dv-border-default: #75696b; --dv-border-strong: #75696b;
+  --dv-primary: #ac7d84; --dv-primary-hover: #9e747c; --dv-primary-active: #ab898a; --dv-primary-tint: #3f1320;
+  --dv-palette-button: #ac7d84; --dv-palette-button-text: #0f172a; --dv-palette-on-tint: #ac7d84; --dv-focus-ring: #995b63;
+  --dv-shadow-sm: none; --dv-shadow-md: none;
+}
+
+/* ── Mauve Meadow ────────────────────────────────────────── */
+html[data-palette="mauve"] {
+  --dv-bg: #f6f1f2; --dv-raised: #faf8f8; --dv-overlay: #fcfbfb; --dv-sunken: #e9e5e6;
+  --dv-text: #110f19; --dv-secondary: #44424a; --dv-muted: #6a686e; --dv-disabled: #6a686e;
+  --dv-border: #909096; --dv-border-default: #908f94; --dv-border-strong: #908f94;
+  --dv-primary: #6c7835; --dv-primary-hover: #737e45; --dv-primary-active: #565e2e; --dv-primary-tint: #ebebe0;
+  --dv-palette-button: #677233; --dv-palette-button-text: #f1f5f9; --dv-palette-on-tint: #646f33; --dv-focus-ring: #88963d;
+}
+html.dark[data-palette="mauve"] {
+  --dv-bg: #070918; --dv-raised: #1a1b29; --dv-overlay: #2a2b38; --dv-sunken: #060818;
+  --dv-text: #ccaeb5; --dv-secondary: #a58e96; --dv-muted: #8f7f88; --dv-disabled: #8f7f88;
+  --dv-border: #6b6671; --dv-border-default: #6d656f; --dv-border-strong: #6d656f;
+  --dv-primary: #88963d; --dv-primary-hover: #7d8b3b; --dv-primary-active: #969b55; --dv-primary-tint: #2f322d;
+  --dv-palette-button: #88963d; --dv-palette-button-text: #0f172a; --dv-palette-on-tint: #919f4e; --dv-focus-ring: #88963d;
+  --dv-shadow-sm: none; --dv-shadow-md: none;
+}
+
+/* ── Semantic colors (shared by all palettes of the same mode) ── */
+html[data-palette] {
+  --dv-success: #16a34a; --dv-warning: #d97706; --dv-danger: #dc2626; --dv-info: #2563eb;
+  --dv-success-bg: #f0fdf4; --dv-warning-bg: #fffbeb; --dv-danger-bg: #fef2f2; --dv-info-bg: #eff6ff;
+}
+html.dark[data-palette] {
+  --dv-success: #4ade80; --dv-warning: #fbbf24; --dv-danger: #f87171; --dv-info: #60a5fa;
+  --dv-success-bg: #052e16; --dv-warning-bg: #451a03; --dv-danger-bg: #450a0a; --dv-info-bg: #172554;
+}

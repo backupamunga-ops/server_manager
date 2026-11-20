@@ -8,30 +8,55 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
+  Res,
+  StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
+import { randomUUID } from 'crypto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { SessionGuard } from '../../common/guards/session.guard.js';
 import { PrismaService } from '../../common/prisma.service.js';
+import { StorageObjectsService } from '../storage/storage-objects.service.js';
 
 /**
- * Real mailbox message store for the Aster Mail tool window. Messages live in
- * Postgres; sending between workspace mailboxes delivers for real. External
- * recipients are accepted into Sent but reported as not delivered until the
- * mail stack (MX + SMTP) ships.
+ * Workspace mailbox message store for the Drevanta Mail tool window.
+ * Messages live in Postgres; sending between workspace mailboxes delivers
+ * for real. External recipients go through the mail-stack service
+ * (SMTP + MX) when it is running; otherwise the message is kept in Sent
+ * and reported as not delivered. Attachments are objects under the
+ * reserved `.mail/attachments/` prefix in the workspace bucket.
  */
 @ApiTags('mail')
 @Controller('mail')
 @UseGuards(SessionGuard)
 @ApiBearerAuth()
 export class MailController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly objects: StorageObjectsService,
+  ) {}
+
+  private readonly MAIL_PREFIX = '.mail/attachments/';
 
   private async ws(userId: string) {
     const ws = await this.prisma.workspace.findUnique({ where: { ownerId: userId } });
     if (!ws) throw new BadRequestException('Workspace not found.');
     return ws;
+  }
+
+  /** First workspace bucket (raw query — resilient to model changes). */
+  private async mailBucket(wsId: string): Promise<string> {
+    const rows = await this.prisma.$queryRaw<Array<{ name: string }>>(
+      `SELECT name FROM "Bucket" WHERE "workspaceId" = ${wsId} ORDER BY "createdAt" ASC LIMIT 1`,
+    );
+    if (!rows?.length) throw new BadRequestException('No storage bucket in this workspace — create one to enable attachments.');
+    return rows[0].name;
   }
 
   /** Registry mailboxes for this workspace, mapped to the tool's account model. */
@@ -51,13 +76,9 @@ export class MailController {
     });
   }
 
-  private displayName(email: string, boxes: Array<{ email: string; name: string }>): string {
-    const own = boxes.find((b) => b.email === email);
-    if (own) {
-      const local = email.split('@')[0] ?? email;
-      return `${local.charAt(0).toUpperCase()}${local.slice(1)}`;
-    }
-    return email;
+  private displayName(email: string, boxes: Array<{ email: string }>): string {
+    const local = String(email).split('@')[0] ?? email;
+    return `${local.charAt(0).toUpperCase()}${local.slice(1)}`;
   }
 
   private parse<T>(raw: string, fallback: T): T {
@@ -67,6 +88,21 @@ export class MailController {
     } catch {
       return fallback;
     }
+  }
+
+  /** Validate an attachment list coming from the client. */
+  private cleanAttachments(input: unknown): Array<{ key: string; name: string; size: string }> {
+    if (!Array.isArray(input)) return [];
+    return input
+      .filter((a): a is { key: string; name: string; size: string } =>
+        !!a && typeof (a as { key?: unknown }).key === 'string')
+      .map((a) => ({
+        key: String(a.key),
+        name: String(a.name ?? 'file').slice(0, 120),
+        size: String(a.size ?? ''),
+      }))
+      .filter((a) => a.key.startsWith(this.MAIL_PREFIX) && !a.key.includes('..') && a.key.length < 400)
+      .slice(0, 5);
   }
 
   private toTool(m: {
@@ -89,12 +125,12 @@ export class MailController {
       starred: m.starred,
       priority: m.priority,
       labels: this.parse<string[]>(m.labels, []),
-      attachments: this.parse<Array<{ name: string; size: string }>>(m.attachments, []),
+      attachments: this.parse<Array<{ key?: string; name: string; size: string }>>(m.attachments, []),
       thread: this.parse<Array<{ from: string; snippet: string }>>(m.thread, []),
     };
   }
 
-  private async seedIfEmpty(wsId: string, boxes: Array<{ email: string; name: string }>): Promise<void> {
+  private async seedIfEmpty(wsId: string, boxes: Array<{ email: string }>): Promise<void> {
     const count = await this.prisma.mailMessage.count({ where: { workspaceId: wsId } });
     if (count > 0 || !boxes.length) return;
     const first = boxes[0];
@@ -108,7 +144,7 @@ export class MailController {
         toEmail: first.email,
         subject: 'Your mailbox is live',
         snippet: 'Internal delivery between your workspace mailboxes works today.',
-        body: 'Hello,\n\nThis mailbox is connected to the workspace registry. Sending between mailboxes on your domains delivers for real.\n\nExternal delivery (Gmail, Outlook, etc.) waits for the mail stack — SMTP + MX — which is on the roadmap.\n\n— Drevanta Platform',
+        body: 'Hello,\n\nThis mailbox is connected to the workspace registry. Sending between mailboxes on your domains delivers for real.\n\nExternal delivery runs through the mail stack (SMTP + MX + DKIM) once the stack service is running on this VPS.\n\n— Drevanta Platform',
         labels: JSON.stringify(['Infrastructure']),
         unread: true,
         priority: true,
@@ -152,10 +188,74 @@ export class MailController {
     return { accounts: boxes, messages: rows.map((r) => this.toTool(r)) };
   }
 
+  @Post('attachments')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async uploadAttachment(
+    @CurrentUser() user: { userId: string },
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const ws = await this.ws(user.userId);
+    if (!file) throw new BadRequestException('No file in request.');
+    const bucket = await this.mailBucket(ws.id);
+    const safeName = String(file.originalname ?? 'file').replace(/[^\w. ()-]/g, '_').slice(0, 120) || 'file';
+    const key = `${this.MAIL_PREFIX}${randomUUID()}-${safeName}`;
+    await this.objects.put(bucket, key, file.buffer, file.mimetype || 'application/octet-stream');
+    return { key, name: safeName, size: file.size, bucket };
+  }
+
+  @Get('attachments/download')
+  async downloadAttachment(
+    @CurrentUser() user: { userId: string },
+    @Query('key') keyRaw = '',
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const ws = await this.ws(user.userId);
+    const key = String(keyRaw ?? '');
+    if (!key.startsWith(this.MAIL_PREFIX) || key.includes('..')) throw new BadRequestException('Invalid attachment key.');
+    const bucket = await this.mailBucket(ws.id);
+    const obj = await this.objects.get(bucket, key);
+    res.set({
+      'Content-Type': obj.type || 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${key.split('/').pop() ?? 'attachment'}"`,
+    });
+    if (obj.length > 0) res.set('Content-Length', String(obj.length));
+    return new StreamableFile(obj.body as never);
+  }
+
+  /** Try real SMTP delivery through the mail-stack service. */
+  private async attemptExternalDelivery(
+    fromEmail: string,
+    to: string,
+    subject: string,
+    body: string,
+    attachments: Array<{ key: string; name: string; size: string }>,
+    bucket: string | null,
+  ): Promise<{ delivered: boolean; warning: string | null }> {
+    const base = process.env.MAIL_STACK_URL || 'http://127.0.0.1:3901';
+    const token = process.env.MAIL_STACK_TOKEN || '';
+    try {
+      const res = await fetch(`${base}/outbound`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-mail-stack-token': token },
+        body: JSON.stringify({ from: fromEmail, to, subject, text: body, attachments, bucket }),
+        signal: AbortSignal.timeout(25000),
+      });
+      if (!res.ok) return { delivered: false, warning: `Mail stack refused the message (${res.status}).` };
+      const data = (await res.json()) as { accepted?: string[]; error?: string };
+      if (data.accepted && data.accepted.length > 0) return { delivered: true, warning: null };
+      return { delivered: false, warning: data.error || 'SMTP server did not accept the message.' };
+    } catch {
+      return {
+        delivered: false,
+        warning: 'Mail stack service is not running on this VPS — the message is saved in Sent. Start cloudlane-mail-stack to enable external delivery.',
+      };
+    }
+  }
+
   @Post('send')
   async send(
     @CurrentUser() user: { userId: string },
-    @Body() body: { fromEmail?: string; to?: string; subject?: string; body?: string },
+    @Body() body: { fromEmail?: string; to?: string; subject?: string; body?: string; attachments?: unknown },
   ) {
     const ws = await this.ws(user.userId);
     const boxes = await this.workspaceMailboxes(ws.id);
@@ -165,8 +265,14 @@ export class MailController {
     const text = String(body?.body ?? '');
     if (!boxes.some((b) => b.email === fromEmail)) throw new BadRequestException('Unknown sending mailbox.');
     if (!to || !subject || !text) throw new BadRequestException('Recipient, subject, and body are required.');
+    const attachments = this.cleanAttachments(body?.attachments);
     const senderName = this.displayName(fromEmail, boxes);
     const snippet = text.replace(/\s+/g, ' ').slice(0, 95);
+
+    let bucket: string | null = null;
+    if (attachments.length) {
+      try { bucket = await this.mailBucket(ws.id); } catch { /* attachments kept as metadata only */ }
+    }
     const sent = await this.prisma.mailMessage.create({
       data: {
         workspaceId: ws.id,
@@ -178,9 +284,11 @@ export class MailController {
         subject,
         body: text,
         snippet,
+        attachments: JSON.stringify(attachments),
         unread: false,
       },
     });
+
     const recipient = boxes.find((b) => b.email.toLowerCase() === to.toLowerCase());
     if (recipient) {
       await this.prisma.mailMessage.create({
@@ -194,28 +302,33 @@ export class MailController {
           subject,
           body: text,
           snippet,
+          attachments: JSON.stringify(attachments),
         },
       });
-      await this.prisma.mailMessage.update({ where: { id: sent.id }, data: { thread: JSON.stringify([{ from: recipient.email, snippet: 'Delivered to this workspace mailbox.' }]) } });
       return { message: this.toTool(sent), delivered: true, warning: null };
     }
-    return {
-      message: this.toTool(sent),
-      delivered: false,
-      warning: `${to} is outside this workspace — external delivery starts with the mail stack (SMTP + MX).`,
-    };
+
+    const ext = await this.attemptExternalDelivery(fromEmail, to, subject, text, attachments, bucket);
+    if (ext.delivered) {
+      await this.prisma.mailMessage.update({
+        where: { id: sent.id },
+        data: { thread: JSON.stringify([{ from: to, snippet: 'Accepted for delivery by the mail stack.' }]) },
+      });
+    }
+    return { message: this.toTool(sent), delivered: ext.delivered, warning: ext.warning };
   }
 
   @Post('drafts')
   async drafts(
     @CurrentUser() user: { userId: string },
-    @Body() body: { fromEmail?: string; to?: string; subject?: string; body?: string },
+    @Body() body: { fromEmail?: string; to?: string; subject?: string; body?: string; attachments?: unknown },
   ) {
     const ws = await this.ws(user.userId);
     const boxes = await this.workspaceMailboxes(ws.id);
     const fromEmail = String(body?.fromEmail ?? '');
     if (!boxes.some((b) => b.email === fromEmail)) throw new BadRequestException('Unknown sending mailbox.');
     const text = String(body?.body ?? '');
+    const attachments = this.cleanAttachments(body?.attachments);
     const row = await this.prisma.mailMessage.create({
       data: {
         workspaceId: ws.id,
@@ -227,6 +340,7 @@ export class MailController {
         subject: String(body?.subject ?? '').trim() || '(no subject)',
         body: text,
         snippet: text.replace(/\s+/g, ' ').slice(0, 95),
+        attachments: JSON.stringify(attachments),
         unread: false,
       },
     });
@@ -237,7 +351,7 @@ export class MailController {
   async update(
     @CurrentUser() user: { userId: string },
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { folder?: string; starred?: boolean; unread?: boolean; subject?: string; body?: string; to?: string },
+    @Body() body: { folder?: string; starred?: boolean; unread?: boolean; subject?: string; body?: string; to?: string; attachments?: unknown },
   ) {
     const ws = await this.ws(user.userId);
     const row = await this.prisma.mailMessage.findFirst({ where: { id, workspaceId: ws.id } });
@@ -253,6 +367,7 @@ export class MailController {
       data.snippet = body.body.replace(/\s+/g, ' ').slice(0, 95);
     }
     if (typeof body?.to === 'string') data.toEmail = body.to;
+    if (body?.attachments !== undefined) data.attachments = JSON.stringify(this.cleanAttachments(body.attachments));
     const updated = await this.prisma.mailMessage.update({ where: { id: row.id }, data });
     return { message: this.toTool(updated) };
   }
