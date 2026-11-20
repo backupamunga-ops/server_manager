@@ -542,16 +542,45 @@ a.ov-url:hover{text-decoration:underline}
 .dd{position:relative;display:inline-block;min-width:172px;max-width:100%;vertical-align:middle}
 .form-row .dd,.form-grid .dd,.kv .dd,.col .dd>.dd{display:block;width:100%}
 .dd-native{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;margin:0;padding:0;border:0;z-index:-1}
-.dd-btn{display:flex;align-items:center;justify-content:space-between;gap:9px;width:100%;min-height:41px;padding:10px 12px;border:1px solid var(--border2);border-radius:9px;background:#0d1621;color:var(--text);font-size:13px;font-weight:640;text-align:left;transition:border-color .15s,background .15s;cursor:pointer}
-.dd-btn:hover:not(:disabled),.dd.open .dd-btn{border-color:#69b9a7;background:#12202e}
+.dd-btn{display:flex;align-items:center;justify-content:space-between;gap:9px;width:100%;min-height:41px;padding:10px 12px;border:1px solid var(--border2);border-radius:9px;background:var(--panel2);color:var(--text);font-size:13px;font-weight:640;text-align:left;transition:border-color .15s,background .15s;cursor:pointer}
+.dd-btn:hover:not(:disabled),.dd.open .dd-btn{border-color:var(--mint);background:var(--panel3)}
 .dd-btn:disabled{opacity:.45;cursor:not-allowed}
 .dd-btn .dd-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dd-btn svg{color:var(--muted);flex:none;transition:transform .18s}
 .dd.open .dd-btn svg{transform:rotate(180deg)}
-.dd-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:85;background:#111b28;border:1px solid var(--border2);border-radius:10px;box-shadow:0 18px 44px rgba(0,0,0,.45);max-height:216px;overflow-y:auto;padding:5px;display:grid;gap:2px;animation:pop .14s ease}
+.dd-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:85;background:var(--panel2);border:1px solid var(--border2);border-radius:10px;box-shadow:var(--shadow-md);max-height:216px;overflow-y:auto;padding:5px;display:grid;gap:2px;animation:pop .14s ease}
 .dd.up .dd-menu{top:auto;bottom:calc(100% + 6px)}
 .dd-item{display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;color:var(--text);padding:9px 11px;border-radius:7px;font-size:12.5px;font-weight:600;text-align:left;cursor:pointer;min-height:35px;transition:background .12s}
-.dd-item:hover{background:#1a2b3b}
-.dd-item.selected{color:#a6f1d1;background:#16362f}
-.dd-item svg{color:var(--mint);flex:none}
-.dd:has(> select:invalid):not(:has(.dd-item)) .dd-btn,.dd:has(> select:invalid) .dd-btn{border-color:#a95968}
+.dd-item:hover{background:var(--panel3)}
+.dd-item.selected{color:var(--primary);background:var(--mintbg)}
+.dd-item.selected svg{color:var(--primary)}
+.dd-item svg{flex:none}
+.dd:has(> select:invalid) .dd-btn{border-color:var(--red)}
+
+/* Terminal: breathing room between the "Preview role" label text and its dropdown */
+label.form-label .dd{margin-left:12px}
+
+/* ── App footer ── */
+.app-footer{display:flex;justify-content:space-between;align-items:center;gap:10px 18px;flex-wrap:wrap;padding:16px 4px 8px;margin-top:26px;border-top:1px solid var(--border);color:var(--dim);font-size:11.5px}
+.foot-brand{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;letter-spacing:.2px}
+.foot-meta{display:inline-flex;align-items:center;gap:14px;flex:none}
+.foot-status{display:inline-flex;align-items:center;gap:7px;color:var(--success,var(--mint));font-weight:620;white-space:nowrap}
+.foot-status .dot{width:7px;height:7px;border-radius:50%;background:var(--success,var(--mint));display:inline-block}
+.foot-ver{color:var(--muted);font-weight:620;white-space:nowrap}
+
+/* ── Mobile: names, titles and labels stay single-line with ellipsis ── */
+@media(max-width:600px){
+  h1,.heading h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .heading{min-width:0}
+  .section-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .row,.row.space,.card,.col{min-width:0}
+  .row>*{min-width:0}
+  .activity-item{min-width:0}
+  .activity-body{min-width:0;flex:1}
+  .activity-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+  .activity-time{white-space:nowrap}
+  .kv .k,.kv .v{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .stat-label,.stat-note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip,.badge{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foot-brand{flex:1 1 auto}
+}
