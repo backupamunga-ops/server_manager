@@ -18,6 +18,7 @@ import { DB_APP_USERNAME, DatabasePipelineService } from './database-pipeline.se
 import { DomainPipelineService } from './domain-pipeline.service.js';
 import { AppPipelineService } from './app-pipeline.service.js';
 import { StoragePipelineService } from './storage-pipeline.service.js';
+import { StorageObjectsService } from '../storage/storage-objects.service.js';
 
 const uid = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 11)}`;
 const now = () => new Date();
@@ -64,6 +65,7 @@ export class WorkspaceService {
     private readonly domains: DomainPipelineService,
     private readonly apps: AppPipelineService,
     private readonly storage: StoragePipelineService,
+    private readonly objects: StorageObjectsService,
   ) {}
 
   /** Platform-generated application URL suffix (vercel-style previews). */
@@ -1092,10 +1094,15 @@ export class WorkspaceService {
           where: { bucketId: b.id, key },
         });
         if (dup) throw new BadRequestException('Folder already exists.');
-        await this.prisma.storageObject.create({
-          data: { workspaceId: wsId, bucketId: b.id, key, size: 0, type: 'application/x-folder', isFolder: true },
-        });
-        await this.activity(wsId, 'Virtual prefix created (demo)', `${b.name}/${key}`, 'system');
+        try {
+          await this.objects.put(b.name, key, Buffer.alloc(0), 'application/x-directory');
+          await this.activity(wsId, 'Folder created (Garage)', `${b.name}/${key}`, 'system');
+        } catch {
+          await this.prisma.storageObject.create({
+            data: { workspaceId: wsId, bucketId: b.id, key, size: 0, type: 'application/x-folder', isFolder: true },
+          });
+          await this.activity(wsId, 'Folder registered (Garage pending)', `${b.name}/${key}`, 'system');
+        }
         break;
       }
       case 'objectUpload': {
@@ -1121,8 +1128,18 @@ export class WorkspaceService {
           where: { id: String(p.objectId), workspaceId: wsId },
         });
         if (!o) throw new BadRequestException('Object not found.');
-        await this.prisma.storageObject.delete({ where: { id: o.id } });
-        await this.activity(wsId, 'Object metadata removed (demo)', o.key, 'system');
+        const ob = await this.prisma.bucket.findUnique({ where: { id: o.bucketId } });
+        try {
+          if (ob) {
+            if (o.isFolder) await this.objects.removeFolder(ob.name, o.key.endsWith('/') ? o.key : `${o.key}/`);
+            else await this.objects.remove(ob.name, o.key);
+            await this.activity(wsId, o.isFolder ? 'Folder deleted (Garage)' : 'Object deleted (Garage)', `${ob.name}/${o.key}`, 'system');
+          }
+        } catch (err) {
+          await this.activity(wsId, 'Object metadata removed (Garage delete failed)',
+            `${o.key} · ${(err as Error).message.slice(0, 80)}`, 'system');
+        }
+        await this.prisma.storageObject.deleteMany({ where: { bucketId: o.bucketId, key: o.isFolder ? { startsWith: o.key.endsWith('/') ? o.key : `${o.key}/` } : o.key } });
         break;
       }
       case 'storageGrant': {

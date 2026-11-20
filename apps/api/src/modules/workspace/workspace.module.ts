@@ -8,12 +8,13 @@ import { DatabasePipelineService } from './database-pipeline.service.js';
 import { DomainPipelineService } from './domain-pipeline.service.js';
 import { AppPipelineService } from './app-pipeline.service.js';
 import { StoragePipelineService } from './storage-pipeline.service.js';
+import { StorageModule } from '../storage/storage.module.js';
 import { CronRunnerService } from './cron-runner.service.js';
 import { WorkspaceController } from './workspace.controller.js';
 import { WorkspaceService } from './workspace.service.js';
 
 @Module({
-  imports: [SecretsModule, AgentModule, AuditModule, DeploymentsModule, ServicesModule],
+  imports: [SecretsModule, AgentModule, AuditModule, DeploymentsModule, ServicesModule, StorageModule],
   controllers: [WorkspaceController],
   providers: [WorkspaceService, DatabasePipelineService, DomainPipelineService, AppPipelineService,
     StoragePipelineService, CronRunnerService],

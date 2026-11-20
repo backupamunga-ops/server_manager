@@ -20,6 +20,7 @@
     "openapi:gen": "ts-node -e \"require('./scripts/gen-openapi.ts')\""
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1173.0",
     "@cloudlane/contracts": "workspace:*",
     "@nestjs/common": "10.4.6",
     "@nestjs/config": "3.3.0",
@@ -33,14 +34,14 @@
     "class-transformer": "0.5.1",
     "class-validator": "0.14.1",
     "cookie-parser": "1.4.7",
+    "cron-parser": "^4.9.0",
     "helmet": "8.0.0",
     "multer": "^2.5.0",
     "otplib": "12.0.1",
     "pg-boss": "10.1.5",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.1",
-    "uuid": "11.0.3",
-    "cron-parser": "^4.9.0"
+    "uuid": "11.0.3"
   },
   "devDependencies": {
     "@nestjs/cli": "10.4.9",

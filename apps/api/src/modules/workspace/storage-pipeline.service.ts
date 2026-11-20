@@ -49,11 +49,13 @@ export class StoragePipelineService {
       if (!/already exists/i.test(msg)) this.logger.warn(`bucket create ${name}: ${msg.slice(0, 120)}`);
     }
     // Grant the platform S3 key (tolerate already-granted).
-    try {
-      await this.garage([ 'bucket', 'allow', '--read', '--write', '--key', 'cloudlane-api', name ]);
-    } catch (err) {
-      const msg = String((err as { stderr?: string })?.stderr ?? err);
-      this.logger.warn(`bucket allow ${name}: ${msg.slice(0, 120)}`);
+    for (const key of [ 'cloudlane-api', 'cloudlane-objects' ]) {
+      try {
+        await this.garage([ 'bucket', 'allow', '--read', '--write', '--key', key, name ]);
+      } catch (err) {
+        const msg = String((err as { stderr?: string })?.stderr ?? err);
+        this.logger.warn(`bucket allow ${key} ${name}: ${msg.slice(0, 120)}`);
+      }
     }
     this.logger.log(`garage bucket ready: ${name}`);
     return { bucket: name, endpoint: this.endpoint, region: this.region };

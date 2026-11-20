@@ -568,6 +568,12 @@ label.form-label .dd{margin-left:12px}
 .foot-status .dot{width:7px;height:7px;border-radius:50%;background:var(--success,var(--mint));display:inline-block}
 .foot-ver{color:var(--muted);font-weight:620;white-space:nowrap}
 
+/* Activity rows: single-line with ellipsis at every width (homepage + All activity) */
+.activity-item{min-width:0}
+.activity-body{min-width:0;flex:1}
+.activity-text{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.activity-detail{max-width:100%}
+
 /* ── Mobile: names, titles and labels stay single-line with ellipsis ── */
 @media(max-width:600px){
   h1,.heading h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -584,3 +590,52 @@ label.form-label .dd{margin-left:12px}
   .chip,.badge{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .foot-brand{flex:1 1 auto}
 }
+
+/* ── Object file manager (Orbit Files layout) ── */
+.fm-grid{display:grid;gap:7px;margin-top:16px}
+.fm-row{display:flex;align-items:center;gap:13px;padding:11px 13px;border:1px solid var(--border2);border-radius:9px;background:var(--panel2);transition:border-color .15s,transform .1s;min-width:0}
+.fm-row:hover{border-color:var(--mint)}
+.fm-row[role="button"]{cursor:pointer}
+.fm-row[role="button"]:hover{transform:translateX(2px)}
+.fm-ic{color:var(--gold,#eac880);flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:8px;background:var(--panel3)}
+.fm-main{flex:1;min-width:0;display:grid;gap:2px}
+.fm-name{font-size:13px;font-weight:650;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-actions{display:flex;gap:8px;flex:none;align-items:center}
+.fm-actions .btn{white-space:nowrap}
+
+/* ── Mailbox quota bars ── */
+.quota-bar{display:block;height:6px;width:120px;max-width:100%;border-radius:99px;background:var(--panel3);overflow:hidden;margin-bottom:4px}
+.quota-bar span{display:block;height:100%;border-radius:99px;background:var(--mint)}
+
+/* ── Deliverability rows ── */
+.deliv-row{display:flex;align-items:center;gap:11px;padding:9px 0;border-top:1px dashed var(--border);flex-wrap:wrap}
+.deliv-row:first-of-type{border-top:0}
+.deliv-rec{min-width:170px;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+.deliv-val{flex:1;min-width:200px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deliv-row .badge{flex:none}
+.deliv-row .btn{margin-left:auto;flex:none}
+
+/* ── Webmail preview (Aster Mail layout) ── */
+.mail-shell{display:grid;grid-template-columns:150px minmax(0,1.1fr) minmax(0,1.4fr);gap:13px;align-items:start}
+.mail-folder{display:flex;justify-content:space-between;align-items:center;gap:9px;border:0;background:transparent;color:var(--muted);padding:10px 13px;border-radius:9px;font-size:12.5px;font-weight:640;cursor:pointer;text-align:left;width:100%}
+.mail-folder:hover{background:var(--panel2);color:var(--text)}
+.mail-folder.active{background:var(--mintbg);color:var(--primary);font-weight:680}
+.mail-count{font-size:11px;color:inherit;opacity:.75}
+.mail-list{border:1px solid var(--border2);border-radius:11px;background:var(--panel2);overflow:hidden;display:grid}
+.mail-msg{display:flex;gap:10px;align-items:flex-start;padding:12px 13px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);text-align:left;cursor:pointer;min-width:0}
+.mail-msg:last-child{border-bottom:0}
+.mail-msg:hover,.mail-msg.open{background:var(--panel3)}
+.mail-msg.unread .mail-subj{font-weight:700;color:var(--text)}
+.mail-dot{width:7px;height:7px;border-radius:50%;background:var(--mint);flex:none;margin-top:6px;visibility:hidden}
+.mail-msg.unread .mail-dot{visibility:visible}
+.mail-msgmain{flex:1;min-width:0;display:grid;gap:2px}
+.mail-from{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mail-subj{font-size:12.5px;font-weight:620;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mail-prev{font-size:11px;color:var(--dim,var(--muted));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mail-time{font-size:10.5px;color:var(--muted);flex:none;white-space:nowrap}
+.mail-reader{border:1px solid var(--border2);border-radius:11px;background:var(--panel2);padding:16px 17px;min-height:220px}
+.mail-body{white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.6;color:var(--text);margin:0}
+.compose-card{margin-bottom:15px;border:1px solid var(--mint)}
+@media(max-width:900px){.mail-shell{grid-template-columns:1fr}.mail-folders{}
+.mail-list{max-height:300px;overflow-y:auto}}
