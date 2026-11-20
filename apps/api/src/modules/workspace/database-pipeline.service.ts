@@ -373,7 +373,7 @@ export class DatabasePipelineService {
       // MySQL 8.4 rejects "REVOKE ALL PRIVILEGES, GRANT OPTION" (1064) and
       // errors on revoking from a user with no grants (1141) — so only revoke
       // what SHOW GRANTS actually reports for this database.
-      const stmts = await this.mysqlRevokeStatements(databaseName, username, grantee, q, cname);
+      const stmts = await this.mysqlRevokeStatements(databaseName, username, grantee, q, cname, engine);
       if (list.length) stmts.push(`GRANT ${list.join(', ')} ON ${q}.* TO ${grantee}`);
       await this.sqlExec(engine, cname, databaseName, stmts, `Could not apply privileges to "${username}"`);
     }
@@ -408,7 +408,7 @@ export class DatabasePipelineService {
       const q = this.myIdent(databaseName);
       const grantee = `${this.myLit(username)}@'%'`;
       // See grantPrivileges — only revoke privileges that actually exist.
-      const stmts = await this.mysqlRevokeStatements(databaseName, username, grantee, q, cname);
+      const stmts = await this.mysqlRevokeStatements(databaseName, username, grantee, q, cname, engine);
       stmts.push(`ALTER USER ${this.myLit(username)}@'%' ACCOUNT LOCK`);
       await this.sqlExec(
         engine,
@@ -514,9 +514,9 @@ export class DatabasePipelineService {
     } else {
       const rootPw = await this.mysqlRootPassword(cname);
       dump = await this.docker(
-        ['exec', '-e', `MYSQL_PWD=${rootPw}`, cname, 'mysqldump', '-uroot',
+        ['exec', '-e', `MYSQL_PWD=${rootPw}`, cname, this.dumpBin(engine), '-uroot',
           '--single-transaction', '--routines', '--events', databaseName],
-        { ...dumpOpts, failLabel: `mysqldump of "${databaseName}" failed` },
+        { ...dumpOpts, failLabel: `${this.dumpBin(engine)} of "${databaseName}" failed` },
       );
     }
     if (!dump || !dump.trim()) {
@@ -580,6 +580,20 @@ export class DatabasePipelineService {
       failLabel: `Could not remove the database container ${cname}`,
     });
     this.logger.log(`Database container ${cname} removed`);
+  }
+
+  /**
+   * Client binary names per engine: mariadb:11 images ship `mariadb` /
+   * `mariadb-dump` and NO `mysql` alias, while mysql:8 only ships the
+   * `mysql` family. Using the wrong name fails every exec with
+   * "executable file not found in $PATH".
+   */
+  private sqlBin(engine: string): string {
+    return engine === 'MariaDB' ? 'mariadb' : 'mysql';
+  }
+
+  private dumpBin(engine: string): string {
+    return engine === 'MariaDB' ? 'mariadb-dump' : 'mysqldump';
   }
 
   /** Deterministic container name for a database service. */
@@ -689,7 +703,7 @@ export class DatabasePipelineService {
     } else {
       const rootPw = await this.mysqlRootPassword(cname);
       await this.docker(
-        ['exec', '-e', `MYSQL_PWD=${rootPw}`, cname, 'mysql', '-uroot', '-e', sql],
+        ['exec', '-e', `MYSQL_PWD=${rootPw}`, cname, this.sqlBin(engine), '-uroot', '-e', sql],
         { failLabel },
       );
     }
@@ -707,8 +721,9 @@ export class DatabasePipelineService {
     grantee: string,
     dbQualified: string,
     cname: string,
+    engine = 'MySQL',
   ): Promise<string[]> {
-    const current = await this.mysqlCurrentDbPrivs(cname, databaseName, username);
+    const current = await this.mysqlCurrentDbPrivs(cname, databaseName, username, engine);
     const stmts: string[] = [];
     if (current.privs.length) {
       stmts.push(`REVOKE ${current.privs.join(', ')} ON ${dbQualified}.* FROM ${grantee}`);
@@ -724,10 +739,11 @@ export class DatabasePipelineService {
     cname: string,
     databaseName: string,
     username: string,
+    engine = 'MySQL',
   ): Promise<{ privs: string[]; grantOption: boolean }> {
     const rootPw = await this.mysqlRootPassword(cname);
     const out = await this.docker(
-      ['exec', '-e', `MYSQL_PWD=${rootPw}`, cname, 'mysql', '-uroot', '-e',
+      ['exec', '-e', `MYSQL_PWD=${rootPw}`, cname, this.sqlBin(engine), '-uroot', '-e',
         `SHOW GRANTS FOR ${this.myLit(username)}@'%'`],
       { failLabel: `Could not read the current grants of "${username}"` },
     );
@@ -786,7 +802,7 @@ export class DatabasePipelineService {
           // first-boot temporary server is up WITHOUT the root password,
           // which would let provisioning race the image's init.
           await this.docker(
-            ['exec', '-e', `MYSQL_PWD=${rootPassword}`, cname, 'mysql', '-uroot', '-e', 'SELECT 1'],
+            ['exec', '-e', `MYSQL_PWD=${rootPassword}`, cname, this.sqlBin(engine), '-uroot', '-e', 'SELECT 1'],
             { timeout: 20_000 },
           );
         }
