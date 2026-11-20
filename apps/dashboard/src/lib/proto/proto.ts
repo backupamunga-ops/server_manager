@@ -704,7 +704,7 @@ function emailWebmailTab(): string {
   return `<div class="soft-banner" style="margin-bottom:16px">${ico('info', 20)}<div><strong class="small">Webmail preview</strong><p>Layout preview per the Aster Mail concept. Sending queues to Sent locally — SMTP delivery is on the roadmap.</p></div></div>
  <div class="row space" style="margin-bottom:14px;flex-wrap:wrap"><div class="row" style="gap:12px"><label class="form-label" for="webmailMailbox">Account</label><select id="webmailMailbox" style="max-width:300px">${boxes.map((m) => { const z = domainZone(m.zoneId); return `<option value="${m.id}" ${box && box.id === m.id ? 'selected' : ''}>${esc(m.local)}@${esc(z?.name || '—')}</option>`; }).join('') || '<option value="">No mailboxes</option>'}</select></div><div class="row">${btn(`${ico('pencil', 14)} Compose`, 'mailCompose', 'btn-primary btn-small', '')}</div></div>
  ${compose}
- <div class="mail-shell">${folders.map(([k, t]) => `<button class="mail-folder ${cur === k ? 'active' : ''}" data-action="mailFolder" data-folder="${k}">${t}<span class="mail-count">${mailDemoFolderCount(k)}</span></button>`).join('')}${list}${reader}</div>`;
+ <div class="mail-shell"><div class="mail-folders">${folders.map(([k, t]) => `<button class="mail-folder ${cur === k ? 'active' : ''}" data-action="mailFolder" data-folder="${k}">${t}<span class="mail-count">${mailDemoFolderCount(k)}</span></button>`).join('')}</div>${list}${reader}</div>`;
 }
 
 function emailView(): string {

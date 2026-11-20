@@ -618,6 +618,7 @@ label.form-label .dd{margin-left:12px}
 
 /* ── Webmail preview (Aster Mail layout) ── */
 .mail-shell{display:grid;grid-template-columns:150px minmax(0,1.1fr) minmax(0,1.4fr);gap:13px;align-items:start}
+.mail-folders{display:grid;gap:5px}
 .mail-folder{display:flex;justify-content:space-between;align-items:center;gap:9px;border:0;background:transparent;color:var(--muted);padding:10px 13px;border-radius:9px;font-size:12.5px;font-weight:640;cursor:pointer;text-align:left;width:100%}
 .mail-folder:hover{background:var(--panel2);color:var(--text)}
 .mail-folder.active{background:var(--mintbg);color:var(--primary);font-weight:680}
@@ -637,5 +638,4 @@ label.form-label .dd{margin-left:12px}
 .mail-reader{border:1px solid var(--border2);border-radius:11px;background:var(--panel2);padding:16px 17px;min-height:220px}
 .mail-body{white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.6;color:var(--text);margin:0}
 .compose-card{margin-bottom:15px;border:1px solid var(--mint)}
-@media(max-width:900px){.mail-shell{grid-template-columns:1fr}.mail-folders{}
-.mail-list{max-height:300px;overflow-y:auto}}
+@media(max-width:900px){.mail-shell{grid-template-columns:1fr}.mail-folders{grid-template-columns:repeat(3,1fr)}.mail-list{max-height:300px;overflow-y:auto}}
