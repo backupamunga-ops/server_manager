@@ -2886,6 +2886,14 @@ async function onChange(e: Event): Promise<void> {
     render();
     return;
   }
+  if (target.id === 'objectUploadInput') {
+    const file = (target as HTMLInputElement).files?.[0];
+    if (file) {
+      target.value = '';
+      void storageUploadFile(file);
+    }
+    return;
+  }
   if (target.id === 'webmailMailbox') {
     ui.mailBoxId = target.value;
     ui.mailOpenId = null;
