@@ -139,6 +139,8 @@ let ui: Record<string, unknown> = {
   mailSent: [] as Array<{ id: string; to: string; subject: string; body: string; time: string }>,
   storageStats: null as null | Record<string, { files: number; bytes: number }>,
   storageStatsLoading: false,
+  storageStatsTried: false,
+  storageListingTried: false,
   mailSettings: { quota: 100, dmarc: 'quarantine' },
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   confirmTypeValue: '',
@@ -934,6 +936,7 @@ async function loadStorageStats(): Promise<void> {
     ui.storageStats = null;
   }
   ui.storageStatsLoading = false;
+  ui.storageStatsTried = true;
   render();
 }
 
@@ -971,6 +974,7 @@ async function loadStorageListing(): Promise<void> {
     flash(`Could not list Garage objects: ${(err as Error).message}`, true);
   }
   ui.storageListLoading = false;
+  ui.storageListingTried = true;
   render();
 }
 
@@ -1835,6 +1839,8 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       break;
     }
     case 'storageReload': {
+      ui.storageListingTried = false;
+      ui.storageStatsTried = false;
       void loadStorageListing();
       break;
     }
@@ -2303,6 +2309,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       ui.storagePrefix = '';
       ui.storageSearch = '';
       ui.storageListing = null;
+      ui.storageListingTried = false;
       go('service', null, b.storageId, 'files');
       void loadStorageListing();
       return;
@@ -2313,6 +2320,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       ui.storagePrefix = p;
       ui.storageSearch = '';
       ui.storageListing = null;
+      ui.storageListingTried = false;
       render();
       void loadStorageListing();
       return;
@@ -2768,7 +2776,8 @@ function render(): void {
   const modalSnap = snapshotModalInputs();
   const oldPreview = document.getElementById('preview-frame') as HTMLIFrameElement | null;
   const sv = ui.page === 'service' ? service(ui.serviceId) : null;
-  if (sv && sv.kind === 'storage' && !ui.storageStats && !ui.storageStatsLoading) void loadStorageStats();
+  if (sv && sv.kind === 'storage' && !ui.storageStatsTried && !ui.storageStatsLoading) void loadStorageStats();
+  if (sv && sv.kind === 'storage' && ui.tab === 'files' && !ui.storageListingTried && !ui.storageListLoading && !ui.storageListing) void loadStorageListing();
   const pageFns: Record<string, () => string> = {
     overview, projects: projectsView, project: projectView, service: serviceView,
     databases: () => servicesIndex('database'), cron: () => servicesIndex('cron'),
@@ -2980,6 +2989,7 @@ async function onChange(e: Event): Promise<void> {
     ui.storagePrefix = '';
     ui.storageSearch = '';
     ui.storageListing = null;
+    ui.storageListingTried = false;
     render();
     void loadStorageListing();
   }
