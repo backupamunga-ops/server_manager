@@ -10,6 +10,8 @@ import { ConfigService } from '@nestjs/config';
 import { AgentService } from '../agent/agent.service.js';
 import { DomainPipelineService } from '../workspace/domain-pipeline.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { BuildsService } from '../builds/builds.service.js';
+import { SecretsService } from '../secrets/secrets.service.js';
 
 const DEPLOYMENTS_DIR = '/var/lib/cloudlane/deployments';
 
@@ -46,6 +48,8 @@ export class DeploymentsService {
     private readonly agent: AgentService,
     private readonly domainsPipeline: DomainPipelineService,
     private readonly config: ConfigService,
+    private readonly builds: BuildsService,
+    private readonly secrets: SecretsService,
   ) {
     mkdir(DEPLOYMENTS_DIR, { recursive: true }).catch(() => {});
   }
@@ -333,23 +337,60 @@ export class DeploymentsService {
         'success',
       );
 
+      // ── Vercel-style build: detect → build (queued container) → classify ──
+      const info = await this.builds.detect(deployHtmlDir, String(service.framework ?? 'auto'));
+      await this.updateStage(
+        deploymentId,
+        'DETECTING',
+        `[DETECT] Framework: ${info.label}`,
+        'success',
+      );
+      const build = await this.builds.runBuild(deploymentId, deployHtmlDir, info, async (msg, level) => {
+        await this.updateStage(deploymentId, 'BUILDING', msg, level ?? 'info');
+      });
+      if (build.mode === 'source-only') {
+        throw new Error(build.reason ?? 'This framework is detected but has no hosted runtime yet.');
+      }
+      entryCount = build.entryCount ?? entryCount;
+
       // STARTING_CANDIDATE — agent starts the runtime container
       await this.updateStage(
         deploymentId,
         'STARTING_CANDIDATE',
-        '[RUNTIME] Starting container via agent',
+        build.mode === 'runtime'
+          ? `[RUNTIME] Starting ${build.framework} server container via agent`
+          : '[RUNTIME] Starting static file container via agent',
         'info',
       );
 
+      // Runtime services receive the service environment variables (decrypted
+      // here, passed to the container by the agent) — e.g. DATABASE_URL.
+      let envMap: Record<string, string> | null = null;
+      if (build.mode === 'runtime') {
+        const vars = await this.prisma.serviceVariable.findMany({ where: { serviceId: service.id } });
+        envMap = { NODE_ENV: 'production', PORT: '80' };
+        for (const v of vars) {
+          try {
+            envMap[v.key] = this.secrets.decrypt(v.encryptedValue);
+          } catch {
+            envMap[v.key] = v.encryptedValue;
+          }
+        }
+      }
+
       const startResp = await this.agent.send('release.startCandidate', workspaceId, deploymentId, {
-        imageRef: 'caddy:2-alpine',
+        imageRef: build.mode === 'runtime' ? (build.imageRef ?? 'node:20-alpine') : 'caddy:2-alpine',
         imageDigest: null,
-        cpuLimit: 0.25,
-        memoryLimitMiB: 64,
+        cpuLimit: build.mode === 'runtime' ? 0.5 : 0.25,
+        memoryLimitMiB: build.mode === 'runtime' ? 512 : 64,
         internalPort: 80,
         envVarsHash: 'none',
         volumeIds: [],
-        staticArtifactPath: deployHtmlDir,
+        staticArtifactPath: build.mode === 'runtime' ? null : deployHtmlDir,
+        appPath: build.mode === 'runtime' ? deployHtmlDir : null,
+        workdir: build.mode === 'runtime' ? '/app' : null,
+        cmd: build.mode === 'runtime' ? (build.runCmd ?? null) : null,
+        env: envMap,
         serviceId: service.id,
       });
       const start = (startResp.result ?? {}) as AgentResult;

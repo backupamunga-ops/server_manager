@@ -8,9 +8,13 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma.service.js';
 
-const MAX_ZIP_SIZE = 50 * 1024 * 1024; // 50 MB
-const MAX_EXTRACTED_SIZE = 100 * 1024 * 1024; // 100 MB
-const MAX_ENTRIES = 100000;
+const MAX_ZIP_SIZE = 150 * 1024 * 1024; // 150 MB compressed
+const MAX_EXTRACTED_SIZE = 300 * 1024 * 1024; // 300 MB extracted
+/** Entries after excluding dependency/VCS/build-cache dirs. */
+const MAX_ENTRIES = 30000;
+const ABSOLUTE_MAX_ENTRIES = 65535; // hard cap (zip central directory is uint16)
+/** Dependency/VCS/cache dirs that never count against limits. */
+const IGNORED_PREFIXES = ['node_modules/', '.git/', '.next/', '.turbo/', '.cache/', '.pnpm-store/', 'dist-cache/'];
 const UPLOAD_DIR = '/var/lib/cloudlane/uploads';
 const SOURCES_DIR = '/var/lib/cloudlane/sources';
 
@@ -52,7 +56,7 @@ export class UploadsService {
     if (size > MAX_ZIP_SIZE) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: `File too large. Maximum ${MAX_ZIP_SIZE / 1024 / 1024} MB.`,
+        message: `File too large. Maximum ${MAX_ZIP_SIZE / 1024 / 1024} MB. Tip: exclude node_modules — it is stripped automatically and never counts against limits.`,
       });
     }
     if (!filename.toLowerCase().endsWith('.zip')) {
@@ -256,10 +260,10 @@ export class UploadsService {
     }
 
     const entryCount = view.getUint16(eocd + 10, true);
-    if (entryCount > MAX_ENTRIES) {
+    if (entryCount > ABSOLUTE_MAX_ENTRIES) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: `ZIP has too many entries (${entryCount}). Maximum ${MAX_ENTRIES}.`,
+        message: `ZIP has too many entries (${entryCount}). Maximum ${ABSOLUTE_MAX_ENTRIES}.`,
       });
     }
 
@@ -301,17 +305,29 @@ export class UploadsService {
       offset += 46 + nameLen + extraLen + commentLen;
     }
 
-    // Check for zip bomb: total uncompressed size
-    const totalUncompressed = entries.reduce((sum, e) => sum + e.uncompressedSize, 0);
+    // Dependency/cache entries are stripped at extraction; they never count
+    // against entry or size limits.
+    const isIgnored = (name: string) =>
+      IGNORED_PREFIXES.some((pre) => name.toLowerCase().startsWith(pre) || name.toLowerCase().includes('/' + pre));
+    const deployable = entries.filter((e) => !isIgnored(e.name));
+    if (deployable.length > MAX_ENTRIES) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: `ZIP has too many entries (${deployable.length} after excluding node_modules/.git). Maximum ${MAX_ENTRIES}.`,
+      });
+    }
+
+    // Check for zip bomb: total uncompressed size (deployable content only)
+    const totalUncompressed = deployable.reduce((sum, e) => sum + e.uncompressedSize, 0);
     if (totalUncompressed > MAX_EXTRACTED_SIZE) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: `ZIP contents too large when extracted (${totalUncompressed} bytes). Maximum ${MAX_EXTRACTED_SIZE} bytes.`,
+        message: `ZIP contents too large when extracted (${Math.round(totalUncompressed / 1024 / 1024)} MB). Maximum ${MAX_EXTRACTED_SIZE / 1024 / 1024} MB (excluding node_modules).`,
       });
     }
 
     // Check compression ratio (zip bomb indicator)
-    const totalCompressed = entries.reduce((sum, e) => sum + e.compressedSize, 0);
+    const totalCompressed = deployable.reduce((sum, e) => sum + e.compressedSize, 0);
     if (totalCompressed > 0 && totalUncompressed / totalCompressed > 100) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
@@ -328,14 +344,22 @@ export class UploadsService {
 
   private detectFramework(names: string[]): string {
     const has = (needle: string) => names.some((n) => n.endsWith(needle));
-    const includes = (str: string) => names.some((n) => n.includes(str));
-
+    if (has('go.mod')) return 'Go';
+    if (has('requirements.txt') || has('pyproject.toml') || has('manage.py')) return 'Python';
+    if (has('composer.json')) return 'PHP';
+    if (has('pom.xml') || has('build.gradle') || has('build.gradle.kts')) return 'Java';
+    if (names.some((n) => n.endsWith('.csproj')) || names.some((n) => n.endsWith('.sln'))) return 'C#';
+    if (has('cargo.toml')) return 'Rust';
+    if (has('gemfile')) return 'Ruby';
     if (has('nest-cli.json')) return 'NestJS';
     if (has('next.config.js') || has('next.config.mjs') || has('next.config.ts')) return 'Next.js';
+    if (has('nuxt.config.ts') || has('nuxt.config.js')) return 'Nuxt';
+    if (has('svelte.config.js') || has('svelte.config.mjs')) return 'SvelteKit';
+    if (has('angular.json')) return 'Angular';
+    if (has('astro.config.mjs') || has('astro.config.js')) return 'Astro';
     if (has('vite.config.js') || has('vite.config.ts')) return 'React/Vite';
     if (has('dockerfile')) return 'Dockerfile';
-    if (has('index.html') && !has('package.json')) return 'Static HTML';
-    if (has('package.json')) return 'Node.js/Express';
+    if (has('package.json')) return 'Node.js';
     if (has('index.html')) return 'Static HTML';
     return 'Static HTML'; // default for ZIP uploads
   }
