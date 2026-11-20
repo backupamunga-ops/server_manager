@@ -537,3 +537,21 @@ a.ov-url:hover{text-decoration:underline}
 .ov-facts span:not(:last-child)::after{content:"|";color:var(--dim);margin:0 10px}
 .ov-facts strong{color:var(--text);font-weight:700}
 @media(max-width:1000px){.ov-grid{grid-template-columns:1fr}}
+
+/* ── Custom dropdowns (runtime-enhanced native selects; keeps FormData + change wiring) ── */
+.dd{position:relative;display:inline-block;min-width:172px;max-width:100%;vertical-align:middle}
+.form-row .dd,.form-grid .dd,.kv .dd,.col .dd>.dd{display:block;width:100%}
+.dd-native{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;margin:0;padding:0;border:0;z-index:-1}
+.dd-btn{display:flex;align-items:center;justify-content:space-between;gap:9px;width:100%;min-height:41px;padding:10px 12px;border:1px solid var(--border2);border-radius:9px;background:#0d1621;color:var(--text);font-size:13px;font-weight:640;text-align:left;transition:border-color .15s,background .15s;cursor:pointer}
+.dd-btn:hover:not(:disabled),.dd.open .dd-btn{border-color:#69b9a7;background:#12202e}
+.dd-btn:disabled{opacity:.45;cursor:not-allowed}
+.dd-btn .dd-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dd-btn svg{color:var(--muted);flex:none;transition:transform .18s}
+.dd.open .dd-btn svg{transform:rotate(180deg)}
+.dd-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:85;background:#111b28;border:1px solid var(--border2);border-radius:10px;box-shadow:0 18px 44px rgba(0,0,0,.45);max-height:216px;overflow-y:auto;padding:5px;display:grid;gap:2px;animation:pop .14s ease}
+.dd.up .dd-menu{top:auto;bottom:calc(100% + 6px)}
+.dd-item{display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;color:var(--text);padding:9px 11px;border-radius:7px;font-size:12.5px;font-weight:600;text-align:left;cursor:pointer;min-height:35px;transition:background .12s}
+.dd-item:hover{background:#1a2b3b}
+.dd-item.selected{color:#a6f1d1;background:#16362f}
+.dd-item svg{color:var(--mint);flex:none}
+.dd:has(> select:invalid):not(:has(.dd-item)) .dd-btn,.dd:has(> select:invalid) .dd-btn{border-color:#a95968}

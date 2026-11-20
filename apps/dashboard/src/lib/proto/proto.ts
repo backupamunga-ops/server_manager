@@ -128,6 +128,7 @@ let ui: Record<string, unknown> = {
   sqlDraft: '', sqlResult: null as null | { serviceId: string; blocked: boolean; columns: string[]; rows: unknown[][]; message: string },
   storageBucketId: null as string | null, storagePrefix: '', storageSearch: '',
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
+  confirmTypeValue: '',
   busy: null as string | null,
 };
 
@@ -294,6 +295,7 @@ function renderToast(): void {
     el.id = 'toast';
     el.className = `toast${ui.toast.error ? ' error-toast' : ''}`;
     el.setAttribute('role', 'status');
+    el.dataset.action = 'dismissToast';
     el.innerHTML = `${ico(ui.toast.error ? 'alert' : 'check', 18)}<span>${esc(ui.toast.message)}</span><button aria-label="Dismiss" data-action="dismissToast">${ico('close', 15)}</button>`;
     document.body.appendChild(el);
   }
@@ -933,18 +935,26 @@ function settingsView(): string {
 /* ── custom confirm (replaces native confirm()) — promise-based, styled ── */
 function confirmModal(message: string, danger = false, typedName = ''): Promise<boolean> {
   return new Promise((resolve) => {
+    ui.confirmTypeValue = '';
     ui.confirmBox = { message, danger, typedName: typedName || undefined, resolve };
     render();
   });
+}
+
+function syncConfirmButton(): void {
+  const btn = document.querySelector('.modal [data-action="confirmAnswer"][data-value="1"]') as HTMLButtonElement | null;
+  if (!btn) return;
+  const cb = ui.confirmBox as { typedName?: string } | null;
+  btn.disabled = !!cb && !!cb.typedName && ui.confirmTypeValue.trim() !== cb.typedName;
 }
 
 function confirmModalView(): string {
   const cb = ui.confirmBox as { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void } | null;
   if (!cb) return '';
   const typed = cb.typedName
-    ? `<div class="modal-body" style="padding-top:0"><label for="confirmTypeInput" style="display:block;margin-bottom:8px" class="xs muted">Type <strong style="color:var(--danger);font-family:ui-monospace,monospace">${esc(cb.typedName)}</strong> to confirm deletion</label><input id="confirmTypeInput" class="confirm-type-input" data-expected="${attr(cb.typedName)}" autocomplete="off" spellcheck="false" placeholder="${attr(cb.typedName)}" style="width:100%" /></div>`
+    ? `<div class="modal-body" style="padding-top:0"><label for="confirmTypeInput" style="display:block;margin-bottom:8px" class="xs muted">Type <strong style="color:var(--danger);font-family:ui-monospace,monospace">${esc(cb.typedName)}</strong> to confirm deletion</label><input id="confirmTypeInput" class="confirm-type-input" data-expected="${attr(cb.typedName)}" value="${attr(ui.confirmTypeValue || '')}" autocomplete="off" spellcheck="false" placeholder="${attr(cb.typedName)}" style="width:100%" /></div>`
     : '';
-  return `<div class="modal-wrap" data-action="confirmAnswer"><div class="modal" data-confirm-card="1" style="max-width:460px" role="dialog" aria-modal="true" aria-label="Confirm"><div class="modal-head"><div><h2>${cb.danger ? 'Remove this?' : 'Please confirm'}</h2><p>${esc(cb.message)}</p></div><button class="icon-btn" data-action="confirmAnswer" data-value="0" aria-label="Close dialog">${ico('close', 18)}</button></div>${typed}<div class="modal-footer"><button class="btn" data-action="confirmAnswer" data-value="0">Cancel</button><button class="btn ${cb.danger ? 'btn-danger' : 'btn-primary'}" data-action="confirmAnswer" data-value="1" ${cb.typedName ? 'disabled' : ''}>${cb.typedName ? 'Delete permanently' : 'Confirm'}</button></div></div></div>`;
+  return `<div class="modal-wrap" data-action="confirmAnswer"><div class="modal" data-confirm-card="1" style="max-width:460px" role="dialog" aria-modal="true" aria-label="Confirm"><div class="modal-head"><div><h2>${cb.danger ? 'Remove this?' : 'Please confirm'}</h2><p>${esc(cb.message)}</p></div><button class="icon-btn" data-action="confirmAnswer" data-value="0" aria-label="Close dialog">${ico('close', 18)}</button></div>${typed}<div class="modal-footer"><button class="btn" data-action="confirmAnswer" data-value="0">Cancel</button><button class="btn ${cb.danger ? 'btn-danger' : 'btn-primary'}" data-action="confirmAnswer" data-value="1" ${cb.typedName && (ui.confirmTypeValue || '').trim() !== cb.typedName ? 'disabled' : ''}>${cb.typedName ? 'Delete permanently' : 'Confirm'}</button></div></div></div>`;
 }
 
 /* ── modals — verbatim from the prototype (final merged layer) ── */
@@ -1349,6 +1359,28 @@ function bindPreviewResize(): void {
   window.addEventListener('resize', () => scalePreview());
 }
 
+/* ── custom dropdowns: wrap native selects at render time; FormData/onChange wiring untouched ── */
+function enhanceSelects(): void {
+  document.querySelectorAll('select').forEach((node) => {
+    const s = node as HTMLSelectElement;
+    if (s.classList.contains('dd-native')) return;
+    const cur = s.options[s.selectedIndex];
+    const items = [...s.options].map((o) => `<button type="button" class="dd-item${cur && o.value === cur.value ? ' selected' : ''}" data-action="ddPick" data-value="${attr(o.value)}" role="option">${esc(o.textContent || o.value)}${cur && o.value === cur.value ? ico('check', 13) : ''}</button>`).join('');
+    const wrap = document.createElement('div');
+    wrap.className = 'dd';
+    wrap.setAttribute('data-dd', '1');
+    wrap.innerHTML = `<button type="button" class="dd-btn" data-action="ddToggle" aria-haspopup="listbox" aria-expanded="false"${s.disabled ? ' disabled' : ''}><span class="dd-label">${esc(cur ? cur.textContent || cur.value : 'Select…')}</span>${ico('chev', 14)}</button><div class="dd-menu" role="listbox" hidden>${items}</div>`;
+    s.classList.add('dd-native');
+    (s.parentNode as HTMLElement).insertBefore(wrap, s);
+    wrap.appendChild(s);
+  });
+}
+function closeDropdowns(): void {
+  document.querySelectorAll('.dd').forEach((d) => d.classList.remove('open', 'up'));
+  document.querySelectorAll('.dd-menu').forEach((m) => { (m as HTMLElement).hidden = true; });
+  document.querySelectorAll('.dd-btn[aria-expanded="true"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+}
+
 function scalePreview(): void {
   const box = document.getElementById('preview-scale-box');
   const frame = document.getElementById('preview-frame') as HTMLIFrameElement | null;
@@ -1548,6 +1580,43 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         serviceId: el.dataset.service || ui.serviceId || '',
       });
       break;
+    case 'ddToggle': {
+      const dd = el.closest('.dd') as HTMLElement | null;
+      const menu = dd?.querySelector('.dd-menu') as HTMLElement | null;
+      if (!dd || !menu) break;
+      const opening = menu.hidden;
+      closeDropdowns();
+      if (opening) {
+        const r = dd.getBoundingClientRect();
+        if (r.bottom + 235 > window.innerHeight && r.top > 250) dd.classList.add('up');
+        dd.classList.add('open');
+        menu.hidden = false;
+        el.setAttribute('aria-expanded', 'true');
+      }
+      break;
+    }
+    case 'ddPick': {
+      const dd = el.closest('.dd') as HTMLElement | null;
+      const s = dd?.querySelector('select') as HTMLSelectElement | null;
+      if (!dd || !s) break;
+      const v = el.getAttribute('data-value') || '';
+      if (s.value !== v) {
+        s.value = v;
+        s.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      closeDropdowns();
+      const curOpt = s.options[s.selectedIndex];
+      const lbl = dd.querySelector('.dd-label') as HTMLElement | null;
+      if (lbl && curOpt) lbl.textContent = curOpt.textContent || curOpt.value;
+      dd.querySelectorAll('.dd-item').forEach((it) => {
+        const on = it.getAttribute('data-value') === v;
+        it.classList.toggle('selected', on);
+        const sv = it.querySelector('svg');
+        if (on && !sv) it.insertAdjacentHTML('beforeend', ico('check', 13));
+        if (!on && sv) sv.remove();
+      });
+      break;
+    }
     case 'confirmAnswer': {
       const cb = ui.confirmBox as { message: string; danger: boolean; resolve: (v: boolean) => void } | null;
       const onButton = (event.target as HTMLElement).closest('button');
@@ -1559,7 +1628,9 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         if (!inp || inp.value.trim() !== cb.typedName) break;
       }
       ui.confirmBox = null;
+      ui.confirmTypeValue = '';
       cb?.resolve(value);
+      render();
       break;
     }
     case 'closeModal':
@@ -2437,6 +2508,7 @@ function render(): void {
   requestAnimationFrame(scalePreview);
   transplantPreview(oldPreview);
   restoreModalInputs(modalSnap);
+  enhanceSelects();
   renderToast();
   if (looping) console.warn('[cloudlane] frequent re-render; identity-render guard active');
   const fab = root.querySelector('.ai-fab') as HTMLElement | null;
@@ -2538,6 +2610,7 @@ async function onClick(e: MouseEvent): Promise<void> {
   doAction(el.dataset.action || '', el, e);
 }
 function onKeyDown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') closeDropdowns();
   if (e.key === 'Escape' && ui.modal) {
     ui.modal = null;
     ui.modalData = {};
@@ -2551,6 +2624,11 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 async function onChange(e: Event): Promise<void> {
   const target = e.target as HTMLInputElement;
+  if (target.id === 'confirmTypeInput') {
+    ui.confirmTypeValue = target.value;
+    syncConfirmButton();
+    return;
+  }
   if (target.id === 'mailDomain') {
     const z = domainZone(target.value);
     const suffix = document.getElementById('mailSuffix');
@@ -2617,8 +2695,8 @@ async function onChange(e: Event): Promise<void> {
 function onInput(e: Event): void {
   const target = e.target as HTMLInputElement;
   if (target.id === 'confirmTypeInput') {
-    const btn = (target.closest('.modal') as HTMLElement | null)?.querySelector('[data-action="confirmAnswer"][data-value="1"]') as HTMLButtonElement | null;
-    if (btn) btn.disabled = target.value.trim() !== target.getAttribute('data-expected');
+    ui.confirmTypeValue = target.value;
+    syncConfirmButton();
     return;
   }
   if (target.id === 'projectSearch') {
@@ -2709,6 +2787,7 @@ export function mountApp(): () => void {
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('change', onChange);
   document.addEventListener('input', onInput);
+  document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('[data-dd]')) closeDropdowns(); }, true);
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('dragleave', onDragLeave);
   document.addEventListener('drop', onDrop);
