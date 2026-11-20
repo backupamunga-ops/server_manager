@@ -621,3 +621,26 @@ model ServiceLink {
   fromService Service @relation("LinkFrom", fields: [fromServiceId], references: [id])
   toService   Service @relation("LinkTo", fields: [toServiceId], references: [id])
 }
+
+// ─── Mail (internal delivery; external SMTP is on the mail-stack roadmap) ───
+
+model MailMessage {
+  id           Int      @id @default(autoincrement())
+  workspaceId  String
+  accountEmail String
+  folder       String   @default("inbox")
+  fromName     String   @default("")
+  fromEmail    String   @default("")
+  toEmail      String   @default("")
+  subject      String   @default("")
+  body         String   @default("")
+  snippet      String   @default("")
+  labels       String   @default("[]")
+  attachments  String   @default("[]")
+  thread       String   @default("[]")
+  priority     Boolean  @default(false)
+  unread       Boolean  @default(true)
+  starred      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  @@index([workspaceId, accountEmail, folder])
+}

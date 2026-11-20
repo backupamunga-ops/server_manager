@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -91,10 +92,32 @@ export class StorageController {
     @CurrentUser() user: { userId: string },
     @Param('bucketId') bucketId: string,
     @Query('prefix') prefixRaw = '',
+    @Query('deep') deepRaw = '',
   ) {
     const { bucket } = await this.ownBucket(user.userId, bucketId);
     const prefix = this.safePrefix(prefixRaw);
     const listing = await this.objects.list(bucket.name, prefix);
+    if (deepRaw === '1') {
+      // Full subtree walk for the standalone file manager's tree (capped).
+      const nodes: Array<{ key: string; name: string; type: 'folder' | 'file'; size: number; lastModified: string | null }> = [];
+      const queue: Array<{ prefix: string; depth: number }> = [{ prefix, depth: 0 }];
+      let walks = 0;
+      while (queue.length && nodes.length < 1200 && walks < 160) {
+        const step = queue.shift()!;
+        walks++;
+        const lvl = await this.objects.list(bucket.name, step.prefix);
+        for (const f of lvl.folders) {
+          if (nodes.length >= 1200) break;
+          nodes.push({ key: f.key, name: f.name, type: 'folder', size: 0, lastModified: null });
+          if (step.depth < 5) queue.push({ prefix: f.key, depth: step.depth + 1 });
+        }
+        for (const f of lvl.files) {
+          if (nodes.length >= 1200) break;
+          nodes.push({ key: f.key, name: f.name, type: 'file', size: f.size, lastModified: f.lastModified });
+        }
+      }
+      return { ...listing, bucketId: bucket.id, privacy: bucket.privacy, maxMB: bucket.maxMB, purpose: bucket.purpose, deep: nodes };
+    }
     return {
       ...listing,
       bucketId: bucket.id,
@@ -102,6 +125,61 @@ export class StorageController {
       maxMB: bucket.maxMB,
       purpose: bucket.purpose,
     };
+  }
+
+  @Post('buckets/:bucketId/transfer')
+  async transfer(
+    @CurrentUser() user: { userId: string },
+    @Param('bucketId') bucketId: string,
+    @Body() body: { mode?: string; sources?: string[]; dest?: string; renameTo?: string },
+  ) {
+    const { ws, bucket } = await this.ownBucket(user.userId, bucketId);
+    const mode = body?.mode === 'move' ? 'move' : 'copy';
+    const sources = Array.isArray(body?.sources) ? body.sources.slice(0, 12) : [];
+    if (!sources.length) throw new BadRequestException('No source keys.');
+    const destPrefix = this.safePrefix(body?.dest ?? '');
+    let moved = 0;
+    let skipped = 0;
+    const changedRanges: Array<{ from: string; to: string }> = [];
+    for (const raw of sources) {
+      const src = String(raw ?? '');
+      if (!src || src.includes('..')) { skipped++; continue; }
+      const isFolder = src.endsWith('/');
+      if (isFolder && destPrefix.startsWith(src)) { skipped++; continue; }
+      const base = isFolder ? src.slice(0, -1).split('/').pop() ?? '' : src.split('/').pop() ?? '';
+      const targetName = (body?.renameTo ?? '').trim() || base;
+      if (!/^[a-zA-Z0-9._ -]{1,90}$/.test(targetName)) { skipped++; continue; }
+      const toKey = `${destPrefix}${targetName}${isFolder ? '/' : ''}`;
+      if (toKey === src) { skipped++; continue; }
+      if (isFolder) {
+        const items = await this.objects.walkAll(bucket.name, src, 400);
+        for (const item of items) {
+          const rel = item.key.slice(src.length);
+          await this.objects.copy(bucket.name, item.key, `${toKey}${rel}`);
+          if (mode === 'move') await this.objects.remove(bucket.name, item.key);
+          moved++;
+        }
+        await this.objects.put(bucket.name, toKey, Buffer.alloc(0), 'application/x-directory');
+        if (mode === 'move') await this.objects.remove(bucket.name, src);
+      } else {
+        await this.objects.copy(bucket.name, src, toKey);
+        if (mode === 'move') await this.objects.remove(bucket.name, src);
+        moved++;
+      }
+      changedRanges.push({ from: src, to: toKey });
+    }
+    // Mirror renames/moves into the registry table (best effort).
+    for (const ch of changedRanges) {
+      const rows = await this.prisma.storageObject.findMany({ where: { bucketId: bucket.id, key: { startsWith: ch.from } } });
+      for (const row of rows) {
+        await this.prisma.storageObject.update({
+          where: { id: row.id },
+          data: { key: ch.to + row.key.slice(ch.from.length) },
+        }).catch(() => null);
+      }
+    }
+    await this.log(ws.id, mode === 'move' ? 'Objects moved (Garage)' : 'Objects copied (Garage)', `${bucket.name} · ${moved} object(s) processed`);
+    return { mode, moved, skipped };
   }
 
   @Put('buckets/:bucketId/object')

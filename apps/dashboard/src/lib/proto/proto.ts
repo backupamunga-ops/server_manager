@@ -102,8 +102,6 @@ function parsePath(path: string): { page: string; pId: string | null; sId: strin
     const page = map[seg[0]] ?? seg[0];
     return { page, pId: null, sId: null, tab: tab ?? (seg[0] === 'settings' ? 'workspace' : 'overview') };
   }
-  if (seg[0] === 'mailbox' && seg[1]) return { page: 'mailbox', pId: seg[1], sId: null, tab: null };
-  if (seg[0] === 'files' && seg[1]) return { page: 'filesApp', pId: seg[1], sId: null, tab: null };
   if (seg[0] === 'projects' && seg[1]) return { page: 'project', pId: seg[1], sId: null, tab: tab ?? null };
   if (seg[0] === 'services' && seg[1]) return { page: 'service', pId: null, sId: seg[1], tab: tab ?? 'overview' };
   if (seg[0] === 'domains' && seg[1]) return { page: 'domainDetail', pId: seg[1], sId: null, tab: tab ?? 'overview' };
@@ -112,8 +110,6 @@ function parsePath(path: string): { page: string; pId: string | null; sId: strin
 function buildPath(page: string, pId: string | null, sId: string | null, tab: string | null): string {
   const inv: Record<string, string> = { storageIndex: 'storage', databases: 'databases', cron: 'cron' };
   const seg = inv[page] ?? page;
-  if (page === 'mailbox' && pId) return `/mailbox/${pId}`;
-  if (page === 'filesApp' && pId) return `/files/${pId}`;
   if (page === 'project' && pId) return `/projects/${pId}`;
   if (page === 'service' && sId) return `/services/${sId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
   if (page === 'domainDetail' && pId) return `/domains/${pId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
@@ -714,27 +710,6 @@ function mailWorkspace(showBanner: boolean): string {
  <div class="row space" style="margin-bottom:14px;flex-wrap:wrap"><div class="row" style="gap:12px"><label class="form-label" for="webmailMailbox">Account</label><select id="webmailMailbox" style="max-width:300px">${boxes.map((m) => { const z = domainZone(m.zoneId); return `<option value="${m.id}" ${box && box.id === m.id ? 'selected' : ''}>${esc(m.local)}@${esc(z?.name || '—')}</option>`; }).join('') || '<option value="">No mailboxes</option>'}</select></div><div class="row">${btn(`${ico('pencil', 14)} Compose`, 'mailCompose', 'btn-primary btn-small', '')}</div></div>
  ${compose}
  <div class="mail-shell"><div class="mail-folders">${folders.map(([k, t]) => `<button class="mail-folder ${cur === k ? 'active' : ''}" data-action="mailFolder" data-folder="${k}">${t}<span class="mail-count">${mailDemoFolderCount(k)}</span></button>`).join('')}</div>${list}${reader}</div>`;
-}
-
-function standaloneTopbar(tool: string, right: string): string {
-  return `<div class="sa-topbar"><div class="sa-brand"><span class="status-icon mint">${ico(tool === 'Mail' ? 'mail' : 'folder', 18)}</span><strong>Drevanta ${tool}</strong></div><div class="row" style="gap:10px;flex-wrap:wrap">${right}</div></div>`;
-}
-
-function standaloneMailboxView(): string {
-  const m = state.mailboxes.find((x) => x.id === ui.projectId) || state.mailboxes[0];
-  if (!m) return `${standaloneTopbar('Mail', '')}<div class="card empty"><h3>Mailbox not found</h3>${btn('Open workspace email', 'go', 'btn-primary', 'data-page="email"')}</div>`;
-  ui.mailBoxId = m.id;
-  const z = domainZone(m.zoneId);
-  const addr = `${m.local}@${z?.name || ''}`;
-  return `${standaloneTopbar('Mail', `${badge(addr, 'blue')}${badge(`quota ${m.quota} MB`, 'grey')}${btn('Workspace email', 'go', 'btn-small', 'data-page="email"')}`)}${mailWorkspace(false)}`;
-}
-
-function standaloneFilesView(): string {
-  const b = bucket(ui.projectId) || state.buckets[0];
-  if (!b) return `${standaloneTopbar('Files', '')}<div class="card empty"><h3>No bucket specified</h3>${btn('Open workspace storage', 'go', 'btn-primary', 'data-page="storageIndex"')}</div>`;
-  ui.storageBucketId = b.id;
-  const s = service(b.storageId);
-  return `${standaloneTopbar('Files', `${badge(b.name, 'blue')}${badge('S3 · Garage on VPS', 'grey')}${btn('Workspace storage', 'go', 'btn-small', 'data-page="storageIndex"')}`)}${s ? storageFilesView(s) : '<div class="card empty"><h3>Storage service not found</h3></div>'}`;
 }
 
 function emailSettingsTab(): string {
@@ -2794,27 +2769,17 @@ function render(): void {
   const oldPreview = document.getElementById('preview-frame') as HTMLIFrameElement | null;
   const sv = ui.page === 'service' ? service(ui.serviceId) : null;
   if (sv && sv.kind === 'storage' && !ui.storageStatsTried && !ui.storageStatsLoading) void loadStorageStats();
-  if (ui.page === 'filesApp') {
-    const rb = bucket(ui.projectId);
-    if (rb && ui.storageBucketId !== rb.id) {
-      ui.storageBucketId = rb.id; ui.storagePrefix = ''; ui.storageSearch = '';
-      ui.storageListing = null; ui.storageListingTried = false;
-    }
-  }
-  if (((sv && sv.kind === 'storage' && ui.tab === 'files') || ui.page === 'filesApp') && !ui.storageListingTried && !ui.storageListLoading && !ui.storageListing) void loadStorageListing();
+  if (sv && sv.kind === 'storage' && ui.tab === 'files' && !ui.storageListingTried && !ui.storageListLoading && !ui.storageListing) void loadStorageListing();
   const pageFns: Record<string, () => string> = {
     overview, projects: projectsView, project: projectView, service: serviceView,
     databases: () => servicesIndex('database'), cron: () => servicesIndex('cron'),
     domains: domainsView, domainDetail: domainDetailView, email: emailView,
-    mailbox: standaloneMailboxView, filesApp: standaloneFilesView,
     servers: serversView, activity: activityView, settings: settingsView,
     storageIndex: storageOverview, docs: docsView,
   };
   const page = (pageFns[ui.page as string] || overview)();
-  const standalone = ui.page === 'mailbox' || ui.page === 'filesApp';
-  const nextHtml = standalone
-    ? `<div class="standalone">${page}</div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`
-    : `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div>${appFooter()}</main></div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`;
+  const nextHtml =
+    `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div>${appFooter()}</main></div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`;
   if (nextHtml === lastRenderedHtml) {
     renderToast();
     return;
@@ -2830,7 +2795,7 @@ function render(): void {
   renderToast();
   if (looping) console.warn('[cloudlane] frequent re-render; identity-render guard active');
   const fab = root.querySelector('.ai-fab') as HTMLElement | null;
-  if (!standalone && !fab) {
+  if (!fab) {
     const el = document.createElement('button');
     el.className = 'ai-fab';
     el.dataset.action = 'assistantOpen';

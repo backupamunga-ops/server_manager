@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#090e15" />
+  <meta name="description" content="Aster Mail — a modern, AI-ready webmail prototype for hosting control panels and teams." />
+  <title>Drevanta Mail</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-400.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-500.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-600.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.2.8/latin-700.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Local SVG icon library: no frameworks, external images, or icon dependencies. -->
+  <svg xmlns="http://www.w3.org/2000/svg" class="svg-sprite" aria-hidden="true">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="7"/><path d="m16 16 4.4 4.4"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 13h5l2 3h4l2-3h5"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2.7 3.05 6.35 7 .96-5.08 4.96 1.2 7.01L12 18.68 5.83 22l1.2-7.02L1.95 10l7-.96L12 2.7Z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4L22 2Z"/><path d="M22 2 11 13"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v11h14V9M10 13h4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5M12 18h.01"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="m2 11 9 10 11-11V3H12L2 11Z"/><circle cx="17" cy="8" r="1"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M9.5 2.7 10 5a8 8 0 0 1 4 0l.5-2.3 3 1.7-1.1 2a8 8 0 0 1 2 3.4l2.3.4v3.5l-2.3.4a8 8 0 0 1-2 3.4l1.1 2-3 1.7L14 19a8 8 0 0 1-4 0l-.5 2.3-3-1.7 1.1-2a8 8 0 0 1-2-3.4l-2.3-.4v-3.5l2.3-.4a8 8 0 0 1 2-3.4l-1.1-2 3-1.7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="m12 2 1.8 7.2L21 11l-7.2 1.8L12 20l-1.8-7.2L3 11l7.2-1.8L12 2ZM19 17l.65 2.35L22 20l-2.35.65L19 23l-.65-2.35L16 20l2.35-.65L19 17Z"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.6A8.7 8.7 0 0 1 8.4 4 8.9 8.9 0 1 0 20 15.6Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></symbol>
+    <symbol id="i-reply" viewBox="0 0 24 24"><path d="m10 8-7 5 7 5v-4c8 0 10 2 11 6-.5-8-4-12-11-12Z"/></symbol>
+    <symbol id="i-reply-all" viewBox="0 0 24 24"><path d="m10 8-6 5 6 5v-4c6 0 9 1 11 6-.5-8-4-12-11-12Z"/><path d="m7 6-5 5"/></symbol>
+    <symbol id="i-forward" viewBox="0 0 24 24"><path d="m14 8 7 5-7 5v-4c-8 0-10 2-11 6 .5-8 4-12 11-12Z"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m20 11.7-8.4 8.4a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.4-8.4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+    <symbol id="i-check-check" viewBox="0 0 24 24"><path d="m2 12 4 4 7-7M10 13l3 3 9-9"/></symbol>
+    <symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m7.7 12 2.8 2.8 5.8-5.8"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M5 5 19 19M19 5 5 19"/></symbol>
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M6 18 18 6M8 6h10v10"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9 8 11 4.6-2 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3M3 12h18"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18M12 3c-5 5-5 13 0 18"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="3" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.8 9A7 7 0 0 1 18 7l2 5M4 12l2 5a7 7 0 0 0 12.2-2"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m3 6 9 7 9-7"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M13 5h6v6M19 5l-9 9"/><path d="M19 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M8 8V5a3 3 0 1 0-3 3h14a3 3 0 1 0-3-3v14a3 3 0 1 0 3-3H5a3 3 0 1 0 3 3V8Z"/></symbol>
+  </svg>
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-row">
+        <div class="brand-icon"><span class="brand-bars"><i></i><i></i><i></i></span></div>
+        <div class="brand-name">drevanta<span>mail</span><span class="brand-dot">.</span></div>
+        <span class="brand-version">BETA</span>
+      </div>
+      <div class="workspace-switcher" id="accountSwitcher">
+        <button type="button" class="workspace-button" id="accountButton" aria-label="Choose mailbox" aria-expanded="false">
+          <span class="workspace-avatar">D</span>
+          <span class="workspace-text"><strong id="currentWorkspace">Workspace</strong><small id="currentAccount">All mailboxes</small></span>
+          <svg class="icon small"><use href="#i-chevron-down"/></svg>
+        </button>
+        <div class="account-menu" id="accountMenu" hidden></div>
+      </div>
+      <button class="compose-btn" id="composeButton" type="button"><svg class="icon"><use href="#i-plus"/></svg><span>Compose message</span><kbd>N</kbd></button>
+      <div class="sidebar-section-title">MAILBOX <span></span></div>
+      <nav class="nav-list" id="folderNav" aria-label="Mail folders">
+        <button class="nav-item active" type="button" data-folder="inbox"><svg class="icon"><use href="#i-inbox"/></svg><span>Inbox</span><span class="nav-count" id="inboxCount">0</span></button>
+        <button class="nav-item" type="button" data-folder="starred"><svg class="icon"><use href="#i-star"/></svg><span>Starred</span></button>
+        <button class="nav-item" type="button" data-folder="sent"><svg class="icon"><use href="#i-send"/></svg><span>Sent</span></button>
+        <button class="nav-item" type="button" data-folder="drafts"><svg class="icon"><use href="#i-file"/></svg><span>Drafts</span><span class="nav-count subtle-count" id="draftCount">0</span></button>
+        <button class="nav-item" type="button" data-folder="archive"><svg class="icon"><use href="#i-archive"/></svg><span>Archive</span></button>
+        <button class="nav-item" type="button" data-folder="spam"><svg class="icon"><use href="#i-alert"/></svg><span>Spam</span></button>
+        <button class="nav-item" type="button" data-folder="trash"><svg class="icon"><use href="#i-trash"/></svg><span>Trash</span></button>
+      </nav>
+      <div class="sidebar-section-title labels-title">LABELS <button class="icon-button tiny-button" id="labelsInfo" type="button" title="About labels"><svg class="icon"><use href="#i-plus"/></svg></button></div>
+      <nav class="nav-list labels-nav" id="labelNav" aria-label="Labels">
+        <button class="nav-item" type="button" data-folder="label:Clients"><span class="label-dot violet"></span><span>Clients</span></button>
+        <button class="nav-item" type="button" data-folder="label:Billing"><span class="label-dot orange"></span><span>Billing</span></button>
+        <button class="nav-item" type="button" data-folder="label:Infrastructure"><span class="label-dot green"></span><span>Infrastructure</span></button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <button class="assistant-promo" id="openAiPromo" type="button">
+        <span class="promo-icon"><svg class="icon"><use href="#i-sparkle"/></svg></span>
+        <strong>Your AI copilot</strong>
+        <span>Make sense of your inbox, in seconds.</span>
+        <span class="promo-link">Explore AI <svg class="icon small"><use href="#i-arrow-up-right"/></svg></span>
+        <span class="promo-decoration"></span>
+      </button>
+      <div class="sidebar-footer">
+        <button type="button" class="footer-action" id="settingsButton"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></button>
+        <div class="footer-divider"></div>
+        <div class="user-profile"><span class="profile-avatar">AK<span class="online-dot"></span></span><span class="user-details"><strong id="profileName">Workspace admin</strong><small>Workspace admin</small></span><svg class="icon small muted"><use href="#i-more"/></svg></div>
+      </div>
+    </aside>
+    <div class="main-area">
+      <header class="topbar">
+        <div class="breadcrumbs"><button class="icon-button mobile-menu" id="mobileMenu" type="button" title="Open menu"><svg class="icon"><use href="#i-menu"/></svg></button><span class="crumb-muted">Workspace</span><svg class="icon crumb-chevron"><use href="#i-chevron-right"/></svg><strong>Mail</strong><span class="header-demo-tag">Live workspace mail</span></div>
+        <div class="top-search"><svg class="icon"><use href="#i-search"/></svg><input id="searchInput" type="search" placeholder="Search mail, people, subjects..." autocomplete="off" aria-label="Search messages"/><kbd>/</kbd></div>
+        <div class="top-actions">
+          <button class="ai-top-button" id="openAiTop" type="button"><svg class="icon"><use href="#i-sparkle"/></svg><span>Ask Aster AI</span></button>
+          <button class="icon-button desktop-theme" id="themeButton" type="button" title="Toggle dark mode" aria-label="Toggle dark mode"><svg class="icon"><use href="#i-moon"/></svg></button>
+          <span class="header-avatar">AK</span>
+        </div>
+      </header>
+      <main class="mail-workspace">
+        <section class="message-list-panel" id="listPanel" aria-label="Messages">
+          <div class="list-header">
+            <div class="title-overline"><span class="status-dot"></span> YOUR EMAIL WORKSPACE</div>
+            <div class="list-title-row"><h1 id="folderTitle">Inbox</h1><span class="unread-pill" id="unreadPill">0 unread</span></div>
+            <p class="list-subtitle" id="folderSubtitle">Keep everything in one beautiful place.</p>
+            <div class="list-actions-row"><div class="filter-tabs" id="filterTabs" role="group" aria-label="Message filters"><button class="filter-tab active" type="button" data-filter="all">All mail</button><button class="filter-tab" type="button" data-filter="unread">Unread</button><button class="filter-tab" type="button" data-filter="priority">Priority</button></div><button class="icon-button" type="button" id="refreshButton" title="Refresh demo messages"><svg class="icon"><use href="#i-refresh"/></svg></button></div>
+          </div>
+          <div class="messages-toolbar"><span id="resultsLabel">All conversations</span><span class="messages-sort"><svg class="icon small"><use href="#i-filter"/></svg> Newest first</span></div>
+          <div class="message-list" id="messageList" aria-live="polite"></div>
+          <div class="list-bottom"><span><span class="bottom-green-dot"></span> Workspace mailbox · Stored in Postgres</span><button id="resetDemoButton" type="button">Reload</button></div>
+        </section>
+        <section class="reader-panel" id="readerPanel" aria-label="Email conversation"><div id="readerContent"></div></section>
+      </main>
+    </div>
+  </div>
+  <div class="mobile-overlay" id="mobileOverlay" hidden></div>
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+  <!-- AI assistant preview. This runs deterministic demos locally, not a model/API. -->
+  <div class="overlay" id="aiOverlay" hidden></div>
+  <aside class="ai-drawer" id="aiDrawer" role="dialog" aria-modal="true" aria-label="Aster AI assistant" aria-hidden="true">
+    <div class="drawer-top"><div class="drawer-brand"><span class="ai-drawer-icon"><svg class="icon"><use href="#i-sparkle"/></svg></span><div><strong>Aster AI</strong><small>Your intelligent mail copilot</small></div></div><button type="button" class="icon-button" id="closeAi" title="Close assistant"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="ai-preview-banner"><svg class="icon small"><use href="#i-shield"/></svg> AI concept preview — responses are simulated locally. No emails leave your browser.</div>
+    <div class="ai-drawer-body" id="aiConversation"><div class="ai-welcome"><span class="ai-large-orb"><svg class="icon"><use href="#i-sparkle"/></svg></span><h2>Less inbox.<br/>More headspace.</h2><p>Explore what an AI-powered email workspace could do for your team.</p></div><div class="ai-suggestion-title">TRY AN ACTION</div><div class="ai-suggestions"><button type="button" data-ai-action="summarize"><svg class="icon"><use href="#i-list"/></svg><span>Summarize this email</span><svg class="icon small"><use href="#i-arrow-up-right"/></svg></button><button type="button" data-ai-action="reply"><svg class="icon"><use href="#i-reply"/></svg><span>Draft a thoughtful reply</span><svg class="icon small"><use href="#i-arrow-up-right"/></svg></button><button type="button" data-ai-action="actions"><svg class="icon"><use href="#i-circle-check"/></svg><span>Extract action items</span><svg class="icon small"><use href="#i-arrow-up-right"/></svg></button></div><div class="ai-chat-history" id="aiChatHistory"></div></div>
+    <form id="aiForm" class="ai-input-form"><div class="ai-input-shell"><input id="aiInput" type="text" placeholder="Ask about the selected email..." autocomplete="off" aria-label="Ask AI"/><button type="submit" title="Ask"><svg class="icon"><use href="#i-arrow-up-right"/></svg></button></div><small>Concept only · Connect your preferred AI provider later</small></form>
+  </aside>
+
+  <!-- Compose drawer -->
+  <div class="overlay" id="composeOverlay" hidden></div>
+  <section class="compose-drawer" id="composeDrawer" role="dialog" aria-modal="true" aria-label="Compose message" aria-hidden="true">
+    <div class="compose-header"><div><span class="title-overline">NEW CONVERSATION</span><h2 id="composeHeading">Compose email</h2></div><button type="button" class="icon-button" id="closeCompose" title="Close compose"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <form id="composeForm" class="compose-form"><div class="compose-field"><label for="composeFrom">From</label><select id="composeFrom" aria-label="Send from account"></select></div><div class="compose-field"><label for="composeTo">To</label><input type="email" id="composeTo" required placeholder="recipient@company.com"/></div><div class="compose-field"><label for="composeSubject">Subject</label><input id="composeSubject" required placeholder="What’s this about?"/></div><div class="compose-editor-wrap"><label for="composeBody">MESSAGE</label><textarea id="composeBody" required placeholder="Start writing your message..."></textarea></div><div class="compose-ai-tools"><button type="button" id="composeAiButton"><svg class="icon"><use href="#i-sparkle"/></svg> Improve draft <span>DEMO</span></button><span>AI writing assistance concept</span></div><div class="compose-footnote"><svg class="icon small"><use href="#i-shield"/></svg> Delivers instantly between workspace mailboxes. External domains start with the mail stack.</div><div class="compose-footer"><button type="button" class="secondary-btn" id="saveDraftButton">Save draft</button><button type="submit" class="primary-btn">Send demo email <svg class="icon"><use href="#i-send"/></svg></button></div></form>
+  </section>
+
+  <!-- Settings dialog -->
+  <div class="overlay" id="settingsOverlay" hidden></div>
+  <section class="settings-dialog" id="settingsDialog" role="dialog" aria-modal="true" aria-label="Mailbox settings" aria-hidden="true">
+    <div class="dialog-heading"><div><span class="title-overline">PERSONALIZE YOUR EXPERIENCE</span><h2>Mailbox settings</h2></div><button type="button" class="icon-button" id="closeSettings" title="Close settings"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="setting-option"><div><strong>Dark appearance</strong><p>Switch to a soft dark interface.</p></div><input type="checkbox" id="darkSetting" class="switch-input" aria-label="Enable dark mode"/></div>
+    <div class="setting-option"><div><strong>Compact message list</strong><p>Fit more conversations on screen.</p></div><input type="checkbox" id="compactSetting" class="switch-input" aria-label="Enable compact view"/></div>
+    <div class="setting-option"><div><strong>AI assistant shortcuts</strong><p>Show AI actions alongside messages.</p></div><input type="checkbox" id="aiSetting" class="switch-input" checked aria-label="Show AI shortcuts"/></div>
+    <div class="settings-note"><svg class="icon"><use href="#i-shield"/></svg><span>Messages are stored in the workspace database. Preferences stay in this browser.</span></div>
+    <button type="button" class="primary-btn settings-done" id="settingsDone">Done</button>
+  </section>
+  <script src="app.js" defer></script>
+</body>
+</html>

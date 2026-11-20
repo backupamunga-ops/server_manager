@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 
 export interface StorageListingFolder {
@@ -123,6 +124,34 @@ export class StorageObjectsService {
       token = res.IsTruncated ? res.NextContinuationToken : undefined;
     } while (token);
     return removed;
+  }
+
+  /** Server-side copy within a bucket (Garage supports CopyObject). */
+  async copy(bucket: string, fromKey: string, toKey: string): Promise<void> {
+    await this.client.send(new CopyObjectCommand({
+      Bucket: bucket,
+      CopySource: `/${encodeURIComponent(bucket)}/${fromKey.split('/').map(encodeURIComponent).join('/')}`,
+      Key: toKey,
+    }));
+  }
+
+  /** Flat walk of every object key under `prefix` (files only, capped). */
+  async walkAll(bucket: string, prefix: string, maxNodes = 800): Promise<Array<{ key: string; size: number }>> {
+    const out: Array<{ key: string; size: number }> = [];
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: token,
+        MaxKeys: 1000,
+      }));
+      for (const o of res.Contents ?? []) {
+        if (o.Key && !o.Key.endsWith('/') && out.length < maxNodes) out.push({ key: o.Key, size: o.Size ?? 0 });
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token && out.length < maxNodes);
+    return out;
   }
 }
 

@@ -16,6 +16,7 @@ import { InstallationModule } from './modules/installation/installation.module.j
 import { OverviewModule } from './modules/overview/overview.module.js';
 import { WorkspaceModule } from './modules/workspace/workspace.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
+import { MailModule } from './modules/mail/mail.module.js';
 import { ProjectsModule } from './modules/projects/projects.module.js';
 import { SecretsModule } from './modules/secrets/secrets.module.js';
 import { ServicesModule } from './modules/services/services.module.js';
@@ -25,6 +26,7 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
   imports: [
     WorkspaceModule,
     StorageModule,
+    MailModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env'],
