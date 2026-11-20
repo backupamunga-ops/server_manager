@@ -7,7 +7,7 @@
  * Outbound: the API posts to /outbound; we resolve the recipient's MX,
  *          deliver directly (nodemailer), sign with DKIM when keys exist.
  *
- * Env: PORT(25), API_URL(http://127.0.0.1:3000/api/v1), MAIL_STACK_TOKEN,
+ * Env: SMTP_PORT(25), API_URL(http://127.0.0.1:3000/api/v1), MAIL_STACK_TOKEN,
  *      S3_ENDPOINT/S3_ACCESS_KEY/S3_SECRET_KEY/S3_REGION (for attachments),
  *      DKIM_KEY_PATH(/etc/cloudlane/mail/dkim.private), DKIM_SELECTOR(mail)
  */
@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 
-const PORT = Number(process.env.PORT || 25);
+const SMTP_PORT = Number(process.env.SMTP_PORT || 25);
 const API_URL = process.env.API_URL || 'http://127.0.0.1:3000/api/v1';
 const TOKEN = process.env.MAIL_STACK_TOKEN || '';
 const DKIM_KEY = process.env.DKIM_KEY_PATH || '/etc/cloudlane/mail/dkim.private';
@@ -152,17 +152,38 @@ http.createServer(async (req, res) => {
   }
 
   try {
-    const mx = await dns.resolveMx(to.split('@')[1] || '');
-    if (!mx?.length) throw new Error(`no MX record for ${to}`);
-    mx.sort((a, b) => a.priority - b.priority);
-    log(`outbound ${from} -> ${to} via ${mx[0].exchange}`);
-    const info = await nodemailer.createTransport({ direct: true, name: process.env.HELO_NAME || 'mail.billucsolutions.co.ke', dkim }).sendMail({
-      from,
-      to,
-      subject: body.subject || '(no subject)',
-      text: body.text || '',
-      attachments,
-    });
+    const rcptDomain = to.split('@')[1] || '';
+    let hosts = [];
+    try {
+      const mx = await dns.resolveMx(rcptDomain);
+      hosts = (mx || []).sort((a, b) => a.priority - b.priority).map((r) => r.exchange).slice(0, 3);
+    } catch { /* fall through to A record */ }
+    if (!hosts.length) {
+      const a = await dns.resolve4(rcptDomain).catch(() => []);
+      hosts = a.slice(0, 1);
+    }
+    if (!hosts.length) throw new Error(`no MX or A record for ${rcptDomain}`);
+    log(`outbound ${from} -> ${to} trying ${hosts.join(', ')}`);
+    let info = null;
+    let lastErr = null;
+    for (const host of hosts) {
+      try {
+        const opts = { host, port: 25, name: process.env.HELO_NAME || 'server.billucsolutions.co.ke' };
+        if (dkim) opts.dkim = dkim;
+        info = await nodemailer.createTransport(opts).sendMail({
+          from,
+          to,
+          subject: body.subject || '(no subject)',
+          text: body.text || '',
+          attachments,
+        });
+        break;
+      } catch (e) {
+        lastErr = e;
+        log(`attempt via ${host} failed: ${e.message}`);
+      }
+    }
+    if (!info) throw lastErr || new Error('all MX hosts failed');
     log('outbound accepted:', (info.accepted || []).join(', '));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ accepted: info.accepted || [], rejected: info.rejected || [] }));
@@ -173,6 +194,6 @@ http.createServer(async (req, res) => {
   }
 }).listen(Number(process.env.OUTBOUND_PORT || 3901), '127.0.0.1', () => log('outbound API on 127.0.0.1:3901'));
 
-server.listen(PORT, () => log(`SMTP receiver listening on :${PORT}`));
+server.listen(SMTP_PORT, () => log(`SMTP receiver listening on :${SMTP_PORT}`));
 refreshRegistry();
 setInterval(refreshRegistry, 60000);
