@@ -126,6 +126,16 @@ async function recordWebhook(provider, body, eventId, resultCode) {
 }
 
 // ---- routes --------------------------------------------------------------
+// Platform health probes GET / expecting 200 — serve a service index there.
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'billu-mobile-backend',
+    status: 'ok',
+    version: VERSION,
+    endpoints: ['/health', '/db-health', '/callbacks/:provider', '/callbacks/mpesa', '/profiles', '/profiles/:id', '/profiles/:id/photo'],
+  });
+});
+
 app.get('/health', wrap((_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), version: VERSION });
 }));
@@ -216,8 +226,16 @@ app.use((err, _req, res, _next) => {
 });
 
 async function main() {
-  await ensureSchema();
-  await ensureBucket();
-  app.listen(PORT, '127.0.0.1', () => console.log(`mobile-backend v${VERSION} on 127.0.0.1:${PORT} (bucket: ${BUCKET})`));
+  // Platform runs the app in a container: bind all interfaces, listen on $PORT.
+  // If MySQL/S3 are briefly unavailable, keep serving /health and retry in the
+  // background instead of crashing — the deployment health check probes /health.
+  let schemaReady = false;
+  const trySchema = async () => {
+    try { await ensureSchema(); await ensureBucket(); schemaReady = true; console.log('schema + bucket ready'); }
+    catch (e) { console.error('schema retry in 5s:', e.code || e.message); setTimeout(trySchema, 5000); }
+  };
+  trySchema();
+  app.listen(PORT, '0.0.0.0', () => console.log(`mobile-backend v${VERSION} on 0.0.0.0:${PORT} (bucket: ${BUCKET}, schemaReady=${schemaReady})`));
 }
+process.on('unhandledRejection', (e) => console.error('unhandled rejection:', e?.message || e));
 main().catch((e) => { console.error('startup failed:', e); process.exit(1); });
