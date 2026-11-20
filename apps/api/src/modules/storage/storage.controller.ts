@@ -63,6 +63,29 @@ export class StorageController {
     });
   }
 
+  @Get('usage')
+  async usage(@CurrentUser() user: { userId: string }) {
+    const ws = await this.prisma.workspace.findUnique({ where: { ownerId: user.userId } });
+    if (!ws) throw new BadRequestException('Workspace not found.');
+    const buckets = await this.prisma.bucket.findMany({ where: { workspaceId: ws.id } });
+    const out = [];
+    for (const b of buckets) {
+      let files = 0;
+      let bytes = 0;
+      let live = false;
+      try {
+        const listing = await this.objects.list(b.name, '');
+        files = listing.files.length;
+        bytes = listing.files.reduce((n, f) => n + f.size, 0);
+        live = true;
+      } catch {
+        // Bucket unreachable from Garage right now — report as not live.
+      }
+      out.push({ bucketId: b.id, name: b.name, files, bytes, maxMB: b.maxMB, privacy: b.privacy, live });
+    }
+    return { endpoint: this.objects.endpoint, buckets: out };
+  }
+
   @Get('buckets/:bucketId/objects')
   async list(
     @CurrentUser() user: { userId: string },

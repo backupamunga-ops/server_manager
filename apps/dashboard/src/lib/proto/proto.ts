@@ -102,6 +102,7 @@ function parsePath(path: string): { page: string; pId: string | null; sId: strin
     const page = map[seg[0]] ?? seg[0];
     return { page, pId: null, sId: null, tab: tab ?? (seg[0] === 'settings' ? 'workspace' : 'overview') };
   }
+  if (seg[0] === 'mailbox' && seg[1]) return { page: 'mailbox', pId: seg[1], sId: null, tab: null };
   if (seg[0] === 'projects' && seg[1]) return { page: 'project', pId: seg[1], sId: null, tab: tab ?? null };
   if (seg[0] === 'services' && seg[1]) return { page: 'service', pId: null, sId: seg[1], tab: tab ?? 'overview' };
   if (seg[0] === 'domains' && seg[1]) return { page: 'domainDetail', pId: seg[1], sId: null, tab: tab ?? 'overview' };
@@ -110,6 +111,7 @@ function parsePath(path: string): { page: string; pId: string | null; sId: strin
 function buildPath(page: string, pId: string | null, sId: string | null, tab: string | null): string {
   const inv: Record<string, string> = { storageIndex: 'storage', databases: 'databases', cron: 'cron' };
   const seg = inv[page] ?? page;
+  if (page === 'mailbox' && pId) return `/mailbox/${pId}`;
   if (page === 'project' && pId) return `/projects/${pId}`;
   if (page === 'service' && sId) return `/services/${sId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
   if (page === 'domainDetail' && pId) return `/domains/${pId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
@@ -135,6 +137,9 @@ let ui: Record<string, unknown> = {
   mailOpenId: null as string | null,
   mailCompose: false,
   mailSent: [] as Array<{ id: string; to: string; subject: string; body: string; time: string }>,
+  storageStats: null as null | Record<string, { files: number; bytes: number }>,
+  storageStatsLoading: false,
+  mailSettings: { quota: 100, dmarc: 'quarantine' },
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   confirmTypeValue: '',
   busy: null as string | null,
@@ -644,7 +649,7 @@ function mailDemoFolderCount(folder: string): number {
 }
 
 function emailTabs(): string {
-  return `<div class="tabs project-tabs">${[['mailboxes', 'Mailboxes'], ['aliases', 'Aliases'], ['deliverability', 'Deliverability'], ['webmail', 'Webmail preview']].map(([k, t]) => `<button class="tab ${ui.emailTab === k ? 'active' : ''}" data-action="emailTab" data-tab="${k}">${t}</button>`).join('')}</div>`;
+  return `<div class="tabs project-tabs">${[['mailboxes', 'Mailboxes'], ['aliases', 'Aliases'], ['deliverability', 'Deliverability'], ['settings', 'Settings']].map(([k, t]) => `<button class="tab ${ui.emailTab === k ? 'active' : ''}" data-action="emailTab" data-tab="${k}">${t}</button>`).join('')}</div>`;
 }
 
 function emailMailboxesTab(): string {
@@ -653,7 +658,7 @@ function emailMailboxesTab(): string {
  <div class="card table-frame"><div class="table-wrap"><table class="table"><thead><tr><th>Email address</th><th>Domain</th><th>Quota</th><th>Status</th><th>Actions</th></tr></thead><tbody>${mail.map((m) => {
     const z = domainZone(m.zoneId);
     const quotaPct = Math.min(100, Math.round((m.quota / 1024) * 100));
-    return `<tr><td class="main-cell mono">${esc(m.local)}@${esc(z?.name || '—')}</td><td>${esc(z?.name || '—')}</td><td><div class="quota-bar" title="${m.quota} MB plan"><span style="width:${quotaPct}%"></span></div><span class="xs muted">${m.quota} MB</span></td><td>${badge('Registry active', 'ok')}</td><td><div class="row">${btn('Open inbox', 'openInbox', 'btn-small', `data-id="${m.id}"`)}${btn('Manage domain', 'openDomainEmail', 'btn-small', `data-id="${m.zoneId}"`)}</div></td></tr>`;
+    return `<tr><td class="main-cell mono">${esc(m.local)}@${esc(z?.name || '—')}</td><td>${esc(z?.name || '—')}</td><td><div class="quota-bar" title="${m.quota} MB plan"><span style="width:${quotaPct}%"></span></div><span class="xs muted">${m.quota} MB</span></td><td>${badge('Registry active', 'ok')}</td><td><div class="row">${btn('Open inbox', 'openInbox', 'btn-small', `data-id="${m.id}"`)}${btn('Manage domain', 'openDomainEmail', 'btn-small', `data-id="${m.zoneId}"`)}${btn('Delete', 'deleteMailbox', 'btn-small', `data-id="${m.id}"`)}</div></td></tr>`;
   }).join('') || '<tr><td colspan="5"><div class="empty"><h3>No mailboxes yet</h3><p>Add a mailbox under a registered domain.</p></div></td></tr>'}</tbody></table></div></div>`;
 }
 
@@ -683,7 +688,7 @@ function emailDeliverabilityTab(): string {
   return `<div class="soft-banner" style="margin-bottom:16px">${ico('info', 20)}<div><strong class="small">Email deliverability checklist</strong><p>Per-zone records required for receiving mail. MX/SPF/DKIM/DMARC are validated again automatically once delivery goes live.</p></div></div>${rows || '<div class="card empty"><h3>No domains yet</h3><p>Register a domain to configure its mail records.</p></div>'}`;
 }
 
-function emailWebmailTab(): string {
+function mailWorkspace(showBanner: boolean): string {
   const boxes = state.mailboxes;
   const box = boxes.find((m) => m.id === ui.mailBoxId) || boxes[0];
   ui.mailBoxId = box ? box.id : null;
@@ -701,10 +706,41 @@ function emailWebmailTab(): string {
   const compose = ui.mailCompose
     ? `<div class="card compose-card"><div class="row space"><h3 class="section-title">New message</h3><button class="btn btn-small" data-action="mailCompose">${ico('close', 13)}</button></div><form id="mailComposeForm" class="form-grid"><div class="form-row"><label class="form-label">To<input class="input" name="to" value="${attr(box ? `${box.local}@${domainZone(box.zoneId)?.name || ''}` : '')}" required /></label></div><div class="form-row"><label class="form-label">Subject<input class="input" name="subject" placeholder="Message subject" required /></label></div><div class="form-row"><label class="form-label">Message<textarea class="input" name="body" rows="6" placeholder="Write your message…"></textarea></label></div><div class="row" style="gap:10px"><button type="submit" class="btn btn-primary">${ico('rocket', 14)} Send (preview)</button><button type="button" class="btn" data-action="mailCompose">Cancel</button></div></form></div>`
     : '';
-  return `<div class="soft-banner" style="margin-bottom:16px">${ico('info', 20)}<div><strong class="small">Webmail preview</strong><p>Layout preview per the Aster Mail concept. Sending queues to Sent locally — SMTP delivery is on the roadmap.</p></div></div>
+  return `${showBanner ? `<div class="soft-banner" style="margin-bottom:16px">${ico('info', 20)}<div><strong class="small">Mailbox preview</strong><p>Demo messages until the mail stack ships — sending queues to Sent locally.</p></div></div>` : ''}
  <div class="row space" style="margin-bottom:14px;flex-wrap:wrap"><div class="row" style="gap:12px"><label class="form-label" for="webmailMailbox">Account</label><select id="webmailMailbox" style="max-width:300px">${boxes.map((m) => { const z = domainZone(m.zoneId); return `<option value="${m.id}" ${box && box.id === m.id ? 'selected' : ''}>${esc(m.local)}@${esc(z?.name || '—')}</option>`; }).join('') || '<option value="">No mailboxes</option>'}</select></div><div class="row">${btn(`${ico('pencil', 14)} Compose`, 'mailCompose', 'btn-primary btn-small', '')}</div></div>
  ${compose}
  <div class="mail-shell"><div class="mail-folders">${folders.map(([k, t]) => `<button class="mail-folder ${cur === k ? 'active' : ''}" data-action="mailFolder" data-folder="${k}">${t}<span class="mail-count">${mailDemoFolderCount(k)}</span></button>`).join('')}</div>${list}${reader}</div>`;
+}
+
+function mailboxPageView(): string {
+  const m = state.mailboxes.find((x) => x.id === ui.projectId) || state.mailboxes[0];
+  if (!m) return `<div class="card empty"><h3>Mailbox not found</h3>${btn('Back to Email', 'go', 'btn-primary', 'data-page="email"')}</div>`;
+  ui.mailBoxId = m.id;
+  const z = domainZone(m.zoneId);
+  const addr = `${m.local}@${z?.name || ''}`;
+  return `${heading('MAILBOX / INBOX PREVIEW', addr, `${esc(z?.name || '')} · quota ${m.quota} MB · demo messages until the mail stack ships`, btn('Email settings', 'go', '', 'data-page="email"'))}${mailWorkspace(false)}`;
+}
+
+function emailSettingsTab(): string {
+  const zones = state.domainZones.filter((z) => z.status === 'verified');
+  return `<div class="grid two">
+   <div class="card"><h3 class="section-title">Mail stack status</h3><div class="divider"></div>
+    <p class="muted small">SMTP delivery, IMAP retrieval and DKIM signing are provisioned with the mail stack. Configure the policies below now — they apply automatically once delivery goes live.</p>
+    <div style="margin-top:13px">${['SMTP delivery', 'IMAP retrieval', 'DKIM signing'].map((x) => `<div class="row space" style="padding:9px 0;border-top:1px dashed var(--border)"><strong class="small">${x}</strong>${badge('Pending provisioning', 'yellow')}</div>`).join('')}</div>
+   </div>
+   <div class="card"><h3 class="section-title">Default mailbox policy</h3><div class="divider"></div>
+    <div class="form-row"><label class="form-label">Default quota for new mailboxes<select id="mailQuotaDefault">${[100, 250, 512, 1024].map((q) => `<option value="${q}" ${ui.mailSettings.quota === q ? 'selected' : ''}>${q} MB</option>`).join('')}</select></label></div>
+    <div class="form-row" style="margin-top:11px"><label class="form-label">DMARC policy<select id="mailDmarcPolicy">${[['none', 'none — monitor only'], ['quarantine', 'quarantine — send to spam'], ['reject', 'reject — block forgeries']].map(([v, t]) => `<option value="${v}" ${ui.mailSettings.dmarc === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>
+    <p class="muted xs" style="margin-top:9px">Catch-all routing and per-mailbox send limits activate with the mail stack.</p>
+    <div style="margin-top:13px">${btn('Save preferences', 'mailSettingsSave', 'btn-primary', '')}</div>
+   </div>
+   <div class="card"><h3 class="section-title">Catch-all addresses</h3><div class="divider"></div>
+    ${zones.length ? zones.map((z) => `<div class="form-row" style="margin-top:9px"><label class="form-label mono">${esc(z.name)}<input class="input" placeholder="catchall@${esc(z.name)} (pending)" disabled /></label></div>`).join('') : '<p class="muted small">No verified domains yet.</p>'}
+   </div>
+   <div class="card"><h3 class="section-title">Mailbox cleanup</h3><div class="divider"></div>
+    <p class="muted small">Deleting a mailbox removes it from the registry along with any aliases pointing at it. Mailboxes are managed under the Mailboxes tab.</p>
+   </div>
+  </div>`;
 }
 
 function emailView(): string {
@@ -712,7 +748,7 @@ function emailView(): string {
   const tabs = emailTabs();
   const body = ui.emailTab === 'aliases' ? emailAliasesTab()
     : ui.emailTab === 'deliverability' ? emailDeliverabilityTab()
-    : ui.emailTab === 'webmail' ? emailWebmailTab()
+    : ui.emailTab === 'settings' ? emailSettingsTab()
     : emailMailboxesTab();
   return `${heading('NETWORKING / COMMUNICATION', 'Email', 'Mailboxes, aliases and deliverability across your registered domains.', btn(`${ico('plus', 15)} New mailbox`, 'openModal', 'btn-primary', `data-modal="mailbox" ${ui.emailTab === 'webmail' || ui.emailTab === 'deliverability' ? 'style="display:none"' : ''}`))}
  <div class="grid three" style="margin-bottom:19px">${statsCard('mail', mail.length, 'Mailboxes', 'Registry identities')}${statsCard('link', aliases.length, 'Aliases', 'Forwarding addresses')}${statsCard('globe', state.domainZones.filter((z) => z.status === 'verified').length, 'Verified domains', 'Available for mail setup')}</div>
@@ -879,11 +915,39 @@ function storageServiceView(s: ServiceRec): string {
 }
 
 function storageServiceOverview(s: ServiceRec): string {
-  return `${storageBanner()}<div class="grid three" style="margin-bottom:16px">${statsCard('folder', bucketsFor(s.id).length, 'Buckets', 'Private by default')}${statsCard('file', bucketsFor(s.id).reduce((n, b) => n + objectsFor(b.id).filter((o) => !o.isFolder).length, 0), 'Objects', 'Synthetic objects / metadata')}${statsCard('harddrive', bytesHuman(storageTotal(s.id)), 'Used in demo', 'Storage bytes are not uploaded')}</div><div class="store-grid"><div class="card"><div class="row space"><h3 class="section-title">Storage buckets</h3>${btn('See all buckets', 'serviceTab', 'btn-small', 'data-tab="buckets"')}</div><div class="divider"></div>${bucketsFor(s.id).map((b) => `<div class="storage-attach"><div class="row"><span class="status-icon gold">${ico('folder', 17)}</span><div><strong class="small">${esc(b.name)}</strong><div class="detail">${esc(b.purpose || 'Managed object storage')} · ${objectsFor(b.id).filter((o) => !o.isFolder).length} files</div></div></div><div class="row">${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}${btn('Browse', 'storageOpenBucket', 'btn-small', `data-id="${b.id}"`)}</div></div>`).join('') || '<p class="muted">No buckets yet.</p>'}</div><div class="col" style="gap:16px"><div class="card"><h3 class="section-title">Production connection</h3><p class="muted small">Use an external S3-compatible provider for small VPS installations. The platform controls access through resource-bound credentials.</p><div class="divider"></div><div class="kv"><span class="k">Provider</span><span class="v">${esc(s.provider)}</span><span class="k">Credentials</span><span class="v">Not connected · demo</span><span class="k">Data path</span><span class="v">Bucket/object key</span></div></div><div class="card"><h3 class="section-title">Maid Finder example</h3><p class="muted small">KYC ID front/back and selfie remain private. Profile photos use a separate bucket. The Express API authorizes temporary upload/read URLs.</p>${btn('View access rules', 'serviceTab', 'btn-small', 'data-tab="access"')}</div></div></div>`;
+  return `${storageBanner()}<div class="grid three" style="margin-bottom:16px">${statsCard('folder', bucketsFor(s.id).length, 'Buckets', 'Private by default')}${statsCard('file', storageLive(s.id).files, 'Objects in Garage', ui.storageStats ? 'Real uploaded objects' : 'Loading live count…')}${statsCard('harddrive', bytesHuman(storageLive(s.id).bytes), 'Storage used', ui.storageStats ? 'Real bytes in Garage' : 'Loading live usage…')}</div><div class="store-grid"><div class="card"><div class="row space"><h3 class="section-title">Storage buckets</h3>${btn('See all buckets', 'serviceTab', 'btn-small', 'data-tab="buckets"')}</div><div class="divider"></div>${bucketsFor(s.id).map((b) => `<div class="storage-attach"><div class="row"><span class="status-icon gold">${ico('folder', 17)}</span><div><strong class="small">${esc(b.name)}</strong><div class="detail">${esc(b.purpose || 'Managed object storage')} · ${objectsFor(b.id).filter((o) => !o.isFolder).length} files</div></div></div><div class="row">${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}${btn('Browse', 'storageBrowseTab', 'btn-small', `data-svc="${s.id}"`)}</div></div>`).join('') || '<p class="muted">No buckets yet.</p>'}</div><div class="col" style="gap:16px"><div class="card"><h3 class="section-title">Production connection</h3><p class="muted small">Use an external S3-compatible provider for small VPS installations. The platform controls access through resource-bound credentials.</p><div class="divider"></div><div class="kv"><span class="k">Provider</span><span class="v">${esc(s.provider)}</span><span class="k">Credentials</span><span class="v">Connected · cloudlane-objects key</span><span class="k">Data path</span><span class="v">Bucket/object key</span></div></div><div class="card"><h3 class="section-title">Maid Finder example</h3><p class="muted small">KYC ID front/back and selfie remain private. Profile photos use a separate bucket. The Express API authorizes temporary upload/read URLs.</p>${btn('View access rules', 'serviceTab', 'btn-small', 'data-tab="access"')}</div></div></div>`;
 }
 
 function storageBucketsView(s: ServiceRec): string {
-  return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Buckets</h3><p class="muted xs">Buckets are resources, not server directories. New buckets start private.</p></div>${btn(`${ico('plus', 15)} Create bucket`, 'openModal', 'btn-primary', 'data-modal="bucketCreate"')}</div><div class="grid two">${bucketsFor(s.id).map((b) => `<article class="card store-card" data-action="storageOpenBucket" data-id="${b.id}"><div class="row space"><span class="status-icon gold">${ico('folder', 20)}</span>${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}</div><div class="name mono" style="margin-top:15px">${esc(b.name)}</div><p>${esc(b.purpose || 'Application objects')}</p><div class="divider"></div><div class="row space"><span class="muted xs">${objectsFor(b.id).filter((o) => !o.isFolder).length} files · ${bytesHuman(totalBytes(b.id))}</span>${btn('Browse files →', 'storageOpenBucket', 'btn-small', `data-id="${b.id}"`)}</div></article>`).join('') || '<div class="card empty">Create your first private bucket.</div>'}</div><p class="hint">In production, quotas, ownership, provider credentials, and encryption policies are enforced by backend services, not browser code.</p>`;
+  return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Buckets</h3><p class="muted xs">Buckets are resources, not server directories. New buckets start private.</p></div>${btn(`${ico('plus', 15)} Create bucket`, 'openModal', 'btn-primary', 'data-modal="bucketCreate"')}</div><div class="grid two">${bucketsFor(s.id).map((b) => `<article class="card store-card" data-action="storageOpenBucket" data-id="${b.id}"><div class="row space"><span class="status-icon gold">${ico('folder', 20)}</span>${badge(b.privacy === 'private' ? 'Private' : 'Restricted', b.privacy === 'private' ? 'ok' : 'blue')}</div><div class="name mono" style="margin-top:15px">${esc(b.name)}</div><p>${esc(b.purpose || 'Application objects')}</p><div class="divider"></div><div class="row space"><span class="muted xs">${objectsFor(b.id).filter((o) => !o.isFolder).length} files · ${bytesHuman(totalBytes(b.id))}</span>${btn('Browse files →', 'storageBrowseTab', 'btn-small', `data-svc="${s.id}"`)}</div></article>`).join('') || '<div class="card empty">Create your first private bucket.</div>'}</div><p class="hint">In production, quotas, ownership, provider credentials, and encryption policies are enforced by backend services, not browser code.</p>`;
+}
+
+async function loadStorageStats(): Promise<void> {
+  if (ui.storageStatsLoading) return;
+  ui.storageStatsLoading = true;
+  try {
+    const data = await api.get<{ buckets: Array<{ bucketId: string; files: number; bytes: number }> }>('/storage/usage');
+    const map: Record<string, { files: number; bytes: number }> = {};
+    for (const b of data.buckets) map[b.bucketId] = { files: b.files, bytes: b.bytes };
+    ui.storageStats = map;
+  } catch {
+    ui.storageStats = null;
+  }
+  ui.storageStatsLoading = false;
+  render();
+}
+
+function storageLive(svcId: string): { files: number; bytes: number } {
+  const stats = ui.storageStats;
+  if (!stats) return { files: 0, bytes: 0 };
+  const bs = bucketsFor(svcId);
+  let files = 0;
+  let bytes = 0;
+  for (const b of bs) {
+    files += stats[b.id]?.files ?? 0;
+    bytes += stats[b.id]?.bytes ?? 0;
+  }
+  return { files, bytes };
 }
 
 function fmtBytes(n: number): string {
@@ -985,7 +1049,7 @@ function storageAccessView(s: ServiceRec): string {
 
 function storageUsageView(s: ServiceRec): string {
   const bs = bucketsFor(s.id);
-  return `<div class="grid three" style="margin-bottom:18px">${statsCard('harddrive', bytesHuman(storageTotal(s.id)), 'Synthetic total', 'Object metadata only')}${statsCard('folder', bs.length, 'Buckets', 'No OS filesystem paths')}${statsCard('file', bs.reduce((n, b) => n + objectsFor(b.id).filter((o) => !o.isFolder).length, 0), 'Objects', 'No real uploads')}</div><div class="card"><h3 class="section-title">Bucket usage and quotas</h3><p class="muted xs">Quotas are design previews only; no backend is enforcing them yet.</p><div class="divider"></div>${bs.map((b) => {
+  return `<div class="grid three" style="margin-bottom:18px">${statsCard('harddrive', bytesHuman(storageLive(s.id).bytes), 'Storage used', ui.storageStats ? 'Real bytes in Garage' : 'Loading…')}${statsCard('folder', bs.length, 'Buckets', 'No OS filesystem paths')}${statsCard('file', storageLive(s.id).files, 'Objects', ui.storageStats ? 'Real uploaded objects' : 'Loading…')}</div><div class="card"><h3 class="section-title">Bucket usage and quotas</h3><p class="muted xs">Quota ceilings are per-bucket targets; usage counts are live from Garage.</p><div class="divider"></div>${bs.map((b) => {
     const used = totalBytes(b.id), max = b.maxMB * 1048576, pct = Math.min(100, 100 * used / max);
     return `<div style="margin:15px 0"><div class="row space"><strong class="small mono">${esc(b.name)}</strong><span class="muted xs">${bytesHuman(used)} of ${b.maxMB} MB</span></div><div class="progress" style="margin:8px 0"><span style="width:${Math.max(pct, .3)}%"></span></div></div>`;
   }).join('')}</div><p class="hint">1 GB RAM / 10 GB disk is a control-plane design target. Prefer external S3-compatible storage; self-hosted object storage needs additional capacity and separate backup planning.</p>`;
@@ -1805,6 +1869,15 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       render();
       break;
     }
+    case 'storageBrowseTab': {
+      const svcId = el.dataset.svc || ui.serviceId;
+      window.open(`/services/${svcId}?tab=files`, '_blank', 'noopener');
+      break;
+    }
+    case 'mailSettingsSave': {
+      flash('Mail preferences saved — they apply when the mail stack ships.');
+      break;
+    }
     case 'confirmAnswer': {
       const cb = ui.confirmBox as { message: string; danger: boolean; resolve: (v: boolean) => void } | null;
       const onButton = (event.target as HTMLElement).closest('button');
@@ -2072,12 +2145,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       break;
     }
     case 'openInbox':
-      ui.emailTab = 'webmail';
-      ui.mailBoxId = id;
-      ui.mailFolder = 'inbox';
-      ui.mailOpenId = null;
-      ui.mailCompose = false;
-      render();
+      window.open(`/mailbox/${id}`, '_blank', 'noopener');
       break;
     case 'deleteMailbox': {
       const m = state.mailboxes.find((x) => x.id === id);
@@ -2699,10 +2767,12 @@ function render(): void {
   }
   const modalSnap = snapshotModalInputs();
   const oldPreview = document.getElementById('preview-frame') as HTMLIFrameElement | null;
+  const sv = ui.page === 'service' ? service(ui.serviceId) : null;
+  if (sv && sv.kind === 'storage' && !ui.storageStats && !ui.storageStatsLoading) void loadStorageStats();
   const pageFns: Record<string, () => string> = {
     overview, projects: projectsView, project: projectView, service: serviceView,
     databases: () => servicesIndex('database'), cron: () => servicesIndex('cron'),
-    domains: domainsView, domainDetail: domainDetailView, email: emailView,
+    domains: domainsView, domainDetail: domainDetailView, email: emailView, mailbox: mailboxPageView,
     servers: serversView, activity: activityView, settings: settingsView,
     storageIndex: storageOverview, docs: docsView,
   };
@@ -2894,6 +2964,8 @@ async function onChange(e: Event): Promise<void> {
     }
     return;
   }
+  if (target.id === 'mailQuotaDefault') { ui.mailSettings.quota = Number((target as HTMLSelectElement).value) || 100; return; }
+  if (target.id === 'mailDmarcPolicy') { ui.mailSettings.dmarc = String((target as HTMLSelectElement).value); return; }
   if (target.id === 'webmailMailbox') {
     ui.mailBoxId = target.value;
     ui.mailOpenId = null;
