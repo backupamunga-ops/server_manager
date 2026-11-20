@@ -34,8 +34,8 @@ export const IGNORED_DIRS = ['node_modules/', '.git/', '.next/', '.turbo/', '.ca
 export interface FrameworkInfo {
   /** Canonical framework label shown in the UI. */
   label: string;
-  /** One of: static | runtime | build-static | build-runtime | unsupported */
-  kind: 'static' | 'runtime' | 'build-static' | 'build-runtime' | 'unsupported';
+  /** One of: static | runtime | build-static | build-runtime | build-auto | unsupported */
+  kind: 'static' | 'runtime' | 'build-static' | 'build-runtime' | 'build-auto' | 'unsupported';
   /** Build container command (build-static/build-runtime). */
   buildCmd?: string;
   /** Runtime container command (build-runtime/runtime). */
@@ -164,8 +164,7 @@ export class BuildsService {
 
   private async detectSvelteKit(dir: string): Promise<FrameworkInfo> {
     const cfg = await this.readFirst(dir, ['svelte.config.js', 'svelte.config.mjs']);
-    const adapterNode = cfg && /adapter-node/.test(cfg);
-    if (adapterNode) {
+    if (cfg && /adapter-node/.test(cfg)) {
       return {
         label: 'SvelteKit',
         kind: 'build-runtime',
@@ -174,23 +173,16 @@ export class BuildsService {
         runCmd: ['node', 'build/index.js'],
       };
     }
-    // adapter-static (or auto: static output wins if present)
-    return { label: 'SvelteKit', kind: 'build-static', buildCmd: 'npm run build', needsInstall: true };
+    // adapter-static or unset: build first, classify by the produced output
+    return { label: 'SvelteKit', kind: 'build-auto', buildCmd: 'npm run build', needsInstall: true, runCmd: ['node', 'build/index.js'] };
   }
 
   private async detectNext(dir: string): Promise<FrameworkInfo> {
-    const cfg = await this.readFirst(dir, ['next.config.js', 'next.config.mjs', 'next.config.ts']);
-    if (cfg && /output\s*[:=]\s*['"]export['"]/.test(cfg)) {
-      return {
-        label: 'Next.js (static export)',
-        kind: 'build-static',
-        buildCmd: 'npm run build',
-        needsInstall: true,
-      };
-    }
+    // Classify by build OUTPUT (out/ vs .next/BUILD_ID) — config text is not
+    // reliable (comments/conditional exports). See executeBuild.
     return {
       label: 'Next.js',
-      kind: 'build-runtime',
+      kind: 'build-auto',
       buildCmd: 'npm run build',
       needsInstall: true,
       runCmd: ['npx', 'next', 'start', '-p', '80'],
@@ -222,13 +214,55 @@ export class BuildsService {
 
   async runBuild(deploymentId: string, srcDir: string, info: FrameworkInfo, onStage?: (msg: string, level?: 'info' | 'success' | 'warning' | 'error') => Promise<void>): Promise<BuildResult> {
     if (info.kind === 'static') return { mode: 'static', framework: info.label };
-    if (info.kind === 'runtime') return { mode: 'runtime', framework: info.label, runCmd: info.runCmd, imageRef: BUILDER_IMAGE };
     if (info.kind === 'unsupported') return { mode: 'source-only', framework: info.label, reason: info.reason };
+    // 'runtime' needs dependency install inside the builder before the app
+    // container starts; queued like every build.
+    if (info.kind === 'runtime') {
+      const task = this.chain.then(() => this.executeRuntimeInstall(deploymentId, srcDir, info, onStage));
+      this.chain = task.catch(() => undefined);
+      return task;
+    }
 
     // queued — one build at a time
     const task = this.chain.then(() => this.executeBuild(deploymentId, srcDir, info, onStage));
     this.chain = task.catch(() => undefined);
     return task;
+  }
+
+  private async executeRuntimeInstall(
+    deploymentId: string,
+    srcDir: string,
+    info: FrameworkInfo,
+    onStage?: (msg: string, level?: 'info' | 'success' | 'warning' | 'error') => Promise<void>,
+  ): Promise<BuildResult> {
+    const started = Date.now();
+    const lockfile = await this.pickLockfile(srcDir);
+    const installCmd = lockfile === 'pnpm-lock.yaml'
+      ? 'corepack pnpm install --frozen-lockfile || corepack pnpm install --no-frozen-lockfile'
+      : lockfile === 'yarn.lock'
+        ? 'yarn install --frozen-lockfile || yarn install'
+        : 'npm ci --no-audit --no-fund || npm install --no-audit --no-fund';
+    const script = [
+      'set -o pipefail',
+      `cd /src || cd $(find /src -maxdepth 4 -name package.json -not -path "*/node_modules/*" | head -1 | xargs dirname)`,
+      `echo "[install] ${info.label}: ${lockfile ?? 'no lockfile (npm install)'}"`,
+      `${installCmd} 2>&1 | tail -25`,
+      'echo "[done] dependencies installed"',
+    ].join('\n');
+    await onStage?.(`[BUILD] Installing dependencies for ${info.label} in ${BUILDER_IMAGE}`, 'info');
+    let code = 0;
+    let log = '';
+    try {
+      code = await this.dockerRunScript(srcDir, script, (chunk) => { log += chunk; });
+    } catch (err) {
+      log += `\n[docker] ${String(err).slice(0, 300)}`;
+      code = 125;
+    }
+    if (code !== 0) {
+      throw new Error(`Dependency install failed (exit ${code}) after ${Math.round((Date.now() - started) / 1000)}s:\n${log.split('\n').slice(-10).join('\n')}`);
+    }
+    await onStage?.('[BUILD] Dependencies installed', 'success');
+    return { mode: 'runtime', framework: info.label, runCmd: info.runCmd, imageRef: BUILDER_IMAGE, buildLog: log.slice(-4000) };
   }
 
   private async executeBuild(deploymentId: string, srcDir: string, info: FrameworkInfo, onStage?: (msg: string, level?: 'info' | 'success' | 'warning' | 'error') => Promise<void>): Promise<BuildResult> {
@@ -271,18 +305,36 @@ export class BuildsService {
       throw new Error(`Build failed (exit ${code}) after ${Math.round((Date.now() - started) / 1000)}s:\n${tail}`);
     }
 
-    // Classify output
+    // Classify by kind and output markers
     const names = await this.listNames(srcDir, '');
     const outDir = this.pickStaticOutput(srcDir, names);
-    if (info.kind === 'build-static' || (outDir && !(await this.hasServerEntry(info)))) {
+    const hasNextBuildId = names.some((n) => n === '.next/build_id');
+    const hasSvelteNodeServer = names.some((n) => n === 'build/index.js');
+
+    if (info.kind === 'build-static') {
       if (!outDir) {
         throw new Error(
-          `Build succeeded but no static output directory (out/, dist/, build/) was found. If this app is server-rendered, mark it with an SSR adapter or a start script.`,
+          'Build succeeded but no static output directory (out/, dist/, build/) was found. If this app is server-rendered, mark it with an SSR adapter or a start script.',
         );
       }
       const count = await this.replaceHtmlWithOutput(srcDir, outDir);
       await onStage?.(`[BUILD] Static output published from ${basename(outDir)} (${count} files)`, 'success');
       return { mode: 'static', framework: info.label, entryCount: count, buildLog: log.slice(-4000) };
+    }
+
+    if (info.kind === 'build-auto') {
+      // Next.js: .next/BUILD_ID means `next start` is valid; out/ means export.
+      // SvelteKit: build/index.js means adapter-node; otherwise static output.
+      const nextRuntime = info.label === 'Next.js' && hasNextBuildId;
+      const svelteRuntime = info.label === 'SvelteKit' && hasSvelteNodeServer;
+      if (!nextRuntime && !svelteRuntime && outDir) {
+        const count = await this.replaceHtmlWithOutput(srcDir, outDir);
+        await onStage?.(`[BUILD] Static output published from ${basename(outDir)} (${count} files)`, 'success');
+        return { mode: 'static', framework: info.label, entryCount: count, buildLog: log.slice(-4000) };
+      }
+      if (!nextRuntime && !svelteRuntime) {
+        throw new Error('Build succeeded but neither a static output (out/, dist/, build/) nor a server build (.next/BUILD_ID, build/index.js) was found.');
+      }
     }
 
     await onStage?.(`[BUILD] Runtime app ready — serving with ${info.runCmd?.join(' ')}`, 'success');
