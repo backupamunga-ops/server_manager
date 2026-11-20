@@ -1,0 +1,14 @@
+{
+  "name": "billu-mobile-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Reference mobile-app backend: webhooks/callbacks, MySQL, profile photos on Garage S3",
+  "scripts": { "start": "node server.mjs" },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.637.0",
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.11.0"
+  }
+}
