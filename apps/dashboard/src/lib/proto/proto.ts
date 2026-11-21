@@ -2000,7 +2000,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       if (!s) break;
       // Real ZIP services go through the real pipeline; demo sources simulate.
       if (s.source === 'zip' && s.kind === 'application') {
-        void api.post(`/services/${id}/deployments/redeploy`, {}).then(async () => {
+        void api.post(`/services/${id}/deployments`, {}).then(async () => {
           await syncState();
           go('service', null, id, 'deployments');
           flash('Redeployment started.');
