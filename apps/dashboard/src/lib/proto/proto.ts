@@ -346,10 +346,10 @@ function readCloudlaneAppearance(): { palette: string; mode: string } {
     const x = JSON.parse(localStorage.getItem(CLOUDLANE_APPEARANCE_KEY) || '{}');
     return {
       palette: CLOUDLANE_PALETTES.some((p) => p[0] === x.palette) ? x.palette : 'original',
-      mode: x.mode === 'light' ? 'light' : 'dark',
+      mode: x.mode === 'dark' ? 'dark' : 'light',
     };
   } catch (_) {
-    return { palette: 'original', mode: 'dark' };
+    return { palette: 'original', mode: 'light' };
   }
 }
 let cloudlaneAppearance = readCloudlaneAppearance();
