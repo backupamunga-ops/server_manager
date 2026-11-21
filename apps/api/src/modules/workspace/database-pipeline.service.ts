@@ -809,8 +809,15 @@ export class DatabasePipelineService {
         return;
       } catch (err) {
         lastErr = (err as Error).message.slice(0, 200);
+        if (/no such container/i.test(lastErr)) {
+          let state = 'unavailable';
+          try { state = (await this.docker(['inspect', '--format', '{{.State.Status}} exit={{.State.ExitCode}}', cname], { timeout: 10_000 })).trim(); } catch { /* gone */ }
+          this.logger.error(`waitForReady ${cname}: container vanished during init (state: ${state}). lastErr: ${lastErr}`);
+          throw new BadRequestException(`Database container ${cname} disappeared during initialization (last probe: ${lastErr}; state: ${state}).`);
+        }
       }
     }
+    this.logger.warn(`waitForReady ${cname}: deadline reached. lastErr: ${lastErr}`);
     await this.docker(['rm', '-f', cname]).catch(() => {});
     throw new BadRequestException(
       `The database container ${cname} did not become ready within 150s (${lastErr}).`,
