@@ -121,7 +121,7 @@ let ui: Record<string, unknown> = {
   page: 'overview', projectId: null, serviceId: null, tab: 'overview',
   projectTab: 'services', settingsTab: 'workspace', domainZoneId: null,
   modal: null, modalData: {} as Record<string, unknown>, mobileMenu: false, toast: null as null | { message: string; error: boolean },
-  search: '', showPassword: false,
+  search: '', showPassword: false, verifyAck: false, verifySuccess: false, verifyTab: 'a',
   assistantOpen: false, assistantText: '', assistantPlan: null as null | { prompt: string; summary: string; steps: string[]; progress: number; approved: boolean; complete: boolean },
   revealedKey: null as string | null,
   termRole: 'developer', termSession: null as null | { serviceId: string; startedAt: number; expiresAt: number; entries: { kind: string; text: string }[] },
@@ -315,6 +315,7 @@ function renderToast(): void {
 }
 
 function go(page: string, pId: string | null = null, sId: string | null = null, tab: string | null = 'overview'): void {
+  if (page === 'storage') page = 'storageIndex';
   ui.page = page;
   ui.projectId = page === 'domainDetail' ? null : pId;
   ui.domainZoneId = page === 'domainDetail' ? pId : null;
@@ -380,7 +381,8 @@ const navGroupsV15 = [{
     ['domains', 'globe', 'Domains'],
     ['databases', 'database', 'Databases'],
     ['email', 'mail', 'Email'],
-    ['cron', 'clock', 'Cron Jobs']
+    ['cron', 'clock', 'Cron Jobs'],
+    ['storage', 'bucket', 'Storage']
   ]
 }, {
   label: 'INFRASTRUCTURE',
@@ -396,7 +398,7 @@ const navGroupsV15 = [{
 }];
 
 function sidebar(): string {
-  return `<aside class="sidebar ${ui.mobileMenu ? 'open' : ''}"><div class="brand"><div class="logo" style="display:flex;align-items:center;justify-content:center"><img src="/brand/icon-96.png" alt="${esc(brand())} logo" style="width:26px;height:26px;object-fit:contain" /></div><div><div class="brand-name">${esc(brand())}<span style="color:var(--mint)">.</span></div><div class="brand-tag">INFRASTRUCTURE, SIMPLIFIED</div></div></div><nav class="nav-list" aria-label="Main navigation">${navGroupsV15.map((group) => `<div class="nav-group-title">${group.label}</div>${group.items.map(([id, ic, t]) => `<button class="nav-item ${ui.page === id || ((ui.page === 'project' || ui.page === 'service') && id === 'projects') || (ui.page === 'domainDetail' && id === 'domains') ? 'active' : ''}" data-action="go" data-page="${id}">${ico(ic, 16)}<span>${t}</span></button>`).join('')}`).join('')}</nav><div class="sidebar-bottom"><button class="side-small-link" data-action="openDocs">${ico('book', 15)} Documentation ${ico('external', 13)}</button><div class="tiny-profile" style="margin-top:10px"><div class="avatar">${esc(initials())}</div><div><div class="profile-name">${esc(state.workspace)}</div><div class="profile-meta">${esc(brand())} workspace</div></div></div></div></aside>`;
+  return `<aside class="sidebar ${ui.mobileMenu ? 'open' : ''}"><div class="brand"><div class="logo" style="display:flex;align-items:center;justify-content:center"><img src="/brand/icon-96.png" alt="${esc(brand())} logo" style="width:26px;height:26px;object-fit:contain" /></div><div><div class="brand-name">${esc(brand())}<span style="color:var(--mint)">.</span></div><div class="brand-tag">INFRASTRUCTURE, SIMPLIFIED</div></div></div><nav class="nav-list" aria-label="Main navigation">${navGroupsV15.map((group) => `<div class="nav-group-title">${group.label}</div>${group.items.map(([id, ic, t]) => `<button class="nav-item ${ui.page === id || ((ui.page === 'project' || ui.page === 'service') && id === 'projects') || (ui.page === 'domainDetail' && id === 'domains') || (ui.page === 'storageIndex' && id === 'storage') ? 'active' : ''}" data-action="go" data-page="${id}">${ico(ic, 16)}<span>${t}</span></button>`).join('')}`).join('')}</nav><div class="sidebar-bottom"><button class="side-small-link" data-action="openDocs">${ico('book', 15)} Documentation ${ico('external', 13)}</button><div class="tiny-profile" style="margin-top:10px"><div class="avatar">${esc(initials())}</div><div><div class="profile-name">${esc(state.workspace)}</div><div class="profile-meta">${esc(brand())} workspace</div></div></div></div></aside>`;
 }
 const initials = () => (state.workspace || 'CW').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || 'CW';
 
@@ -404,7 +406,7 @@ function header(): string {
   const title = ({
     overview: 'Overview', projects: 'Projects', servers: 'Server', databases: 'Databases',
     cron: 'Cron Jobs', domains: 'Domains', email: 'Email', activity: 'Activity & Logs',
-    settings: 'Settings', storageIndex: 'Object Storage', docs: 'Documentation',
+    settings: 'Settings', storageIndex: 'Storage', docs: 'Documentation',
     project: project(ui.projectId)?.name || 'Project',
     service: service(ui.serviceId)?.name || 'Service',
     domainDetail: domainZone(ui.domainZoneId)?.name || 'Domain',
@@ -896,7 +898,7 @@ function storageBanner(): string {
 function storageOverview(): string {
   const all = state.services.filter((s) => s.kind === 'storage');
   const count = state.buckets.length;
-  return `${heading('PROJECT RESOURCES', 'Object Storage', 'Bucket-based file storage for application media, uploads, and private documents.', btn(`${ico('plus', 15)} Add storage`, 'openModal', 'btn-primary', 'data-modal="storageCreate"'))}${storageBanner()}<div class="grid three" style="margin-bottom:18px">${statsCard('bucket', all.length, 'Storage services', 'External S3-compatible connections')}${statsCard('folder', count, 'Buckets', 'Managed inside projects')}${statsCard('harddrive', bytesHuman(state.objects.reduce((n, x) => n + x.size, 0)), 'Demo object usage', 'Metadata only, no file bytes stored')}</div><div class="grid two">${all.map((s) => `<article class="card clickable" data-action="openService" data-id="${s.id}"><div class="row space"><span class="status-icon mint">${ico('harddrive', 20)}</span>${statusBadge(s.status)}</div><h3 style="margin:17px 0 6px">${esc(s.name)}</h3><p class="muted small">${esc(project(s.projectId)?.name || 'Project')} · ${esc(s.provider || 'Object Storage')}</p><div class="divider"></div><div class="row space"><span class="muted xs">${bucketsFor(s.id).length} buckets · ${bytesHuman(storageTotal(s.id))}</span>${ico('arrow', 17)}</div></article>`).join('') || '<div class="card empty">No storage services yet.</div>'}</div><p class="hint" style="margin-top:19px">This is a storage management simulation. File selections are recorded as metadata; no upload takes place.</p>`;
+  return `${heading('RESOURCES', 'Object Storage', 'Bucket-based file storage for application media, uploads, and private documents.', btn(`${ico('plus', 15)} Add storage`, 'openModal', 'btn-primary', 'data-modal="storageCreate"'))}${storageBanner()}<div class="grid three" style="margin-bottom:18px">${statsCard('bucket', all.length, 'Storage services', 'External S3-compatible connections')}${statsCard('folder', count, 'Buckets', 'Managed inside projects')}${statsCard('harddrive', bytesHuman(state.objects.reduce((n, x) => n + x.size, 0)), 'Demo object usage', 'Metadata only, no file bytes stored')}</div><div class="grid two">${all.map((s) => `<article class="card clickable" data-action="openService" data-id="${s.id}"><div class="row space"><span class="status-icon mint">${ico('harddrive', 20)}</span>${statusBadge(s.status)}</div><h3 style="margin:17px 0 6px">${esc(s.name)}</h3><p class="muted small">${esc(project(s.projectId)?.name || 'Project')} · ${esc(s.provider || 'Object Storage')}</p><div class="divider"></div><div class="row space"><span class="muted xs">${bucketsFor(s.id).length} buckets · ${bytesHuman(storageTotal(s.id))}</span>${ico('arrow', 17)}</div></article>`).join('') || '<div class="card empty">No storage services yet.</div>'}</div><p class="hint" style="margin-top:19px">This is a storage management simulation. File selections are recorded as metadata; no upload takes place.</p>`;
 }
 
 function storageServiceView(s: ServiceRec): string {
@@ -1176,6 +1178,7 @@ function openModal(type: string, extra: Record<string, unknown> = {}): void {
     'apiKeyCreate', 'storageCreate', 'bucketCreate', 'storageFolder', 'objectUpload',
     'storageGrant', 'volumeCreate', 'storageInspect', 'dnsModeChange'];
   if (!allowed.includes(type)) return;
+  if (type === 'verifyZone') { ui.verifyAck = false; ui.verifySuccess = false; }
   ui.modal = type;
   ui.modalData = {
     projectId: (extra.projectId as string) || (ui.projectId as string) || state.projects[0]?.id || '__new__',
@@ -1199,7 +1202,7 @@ function modalView(): string {
     domainRegister: ['Add domain', 'Enter your domain now. Configure DNS afterward under Manage → Settings.'],
     subdomain: ['Create subdomain', 'Add a new hostname to this domain.'],
     dnsRecord: ['DNS record', 'Edit simulated DNS records in the central registry.'],
-    verifyZone: ['Verify domain ownership', 'Simulate ownership verification after configuring your DNS provider.'],
+    verifyZone: ['Verify domain ownership', 'Real DNS verification — publish a record at your DNS host, then verify against live DNS.'],
     mailbox: ['Create mailbox', 'Provision a simulated email account for this domain.'],
     mailAlias: ['Create email alias', 'Forward email from an alias to an existing mailbox.'],
     demoInbox: ['Demo webmail', 'Preview a sample inbox without sending or receiving real mail.'],
@@ -1266,10 +1269,41 @@ function modalView(): string {
   if (type === 'verifyZone') {
     const z = domainZone((ui.modalData.zoneId as string) || (ui.domainZoneId as string));
     const mode = z ? (z.pendingDnsMode || z.dnsMode || 'manual') : 'manual';
-    html = z ?
-      `<div class="dns-guide">${mode === 'managed' ? `<div class="soft-banner">${ico('globe', 20)}<div><strong>Nameserver delegation (planned)</strong><p>Managed DNS needs two authoritative Cloudlane nameservers before delegation can go live. Until then, use Manual DNS — its verification is fully real.</p></div></div><div class="dns-guide-grid">${CLOUDLANE_DEMO_NS.map((ns, i) => `<div class="dns-mini-panel"><div class="muted xs">Nameserver ${i + 1}</div><div class="mono small" style="margin:7px 0">${ns}</div>${btn('Copy', 'copy', 'btn-small', `data-copy="${ns}"`)}</div>`).join('')}</div><div class="notice">These .example nameservers are placeholders and WILL NOT resolve. Real managed DNS cannot be activated until two independent authoritative nameservers are deployed.</div>` : `<div class="callout"><h3 class="section-title mono">${esc(z.name)} · Manual DNS — real verification</h3><div class="divider"></div><div class="kv"><span class="k">Option 1 (easiest)</span><span class="v mono">A record · @ → ${esc(serverIp())}</span><span class="k">Option 2</span><span class="v mono">TXT · _cloudlane → ${esc(zoneRecords(z.id).find((r) => r.name === '_cloudlane')?.value || '(see DNS Records)')}</span></div><p class="hint">Do either one at your DNS host, then press Verify DNS. Ownership is checked live against the real DNS system — an A record pointing to this server or a matching TXT both pass. DNS propagation may take a few minutes.</p></div>`}<div class="dns-migration-check"><strong class="small">Before you finish:</strong><label>${ico('check', 15)} Copy existing A/AAAA, CNAME, MX, SPF, DKIM, DMARC and verification records</label><label>${ico('check', 15)} Review DNSSEC / registrar DS records when switching nameservers</label><label>${ico('check', 15)} Confirm your website and email will keep resolving</label></div></div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Cancel', 'closeModal')}${btn(mode === 'managed' ? 'Check delegation' : 'Verify DNS now', 'verifyZoneConfirm', 'btn-primary', `data-id="${z.id}"`)}</div>` :
-      '';
+    if (!z) {
+      html = '';
+    } else if (mode === 'managed') {
+      html = `<div class="dns-guide"><div class="soft-banner">${ico('globe', 20)}<div><strong>Nameserver delegation (planned)</strong><p>Managed DNS needs two authoritative Cloudlane nameservers before delegation can go live. Until then, use Manual DNS — its verification is fully real.</p></div></div><div class="dns-guide-grid">${CLOUDLANE_DEMO_NS.map((ns, i) => `<div class="dns-mini-panel"><div class="muted xs">Nameserver ${i + 1}</div><div class="mono small" style="margin:7px 0">${ns}</div>${btn('Copy', 'copy', 'btn-small', `data-copy="${ns}"`)}</div>`).join('')}</div><div class="notice">These .example nameservers are placeholders and WILL NOT resolve. Real managed DNS cannot be activated until two independent authoritative nameservers are deployed.</div></div><div class="dns-migration-check"><strong class="small">Before you finish:</strong><label>${ico('check', 15)} Copy existing A/AAAA, CNAME, MX, SPF, DKIM, DMARC and verification records</label><label>${ico('check', 15)} Review DNSSEC / registrar DS records when switching nameservers</label><label>${ico('check', 15)} Confirm your website and email will keep resolving</label></div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Cancel', 'closeModal')}${btn('Check delegation', 'verifyZoneConfirm', 'btn-primary', `data-id="${z.id}"`)}</div>`;
+    } else {
+      const token = state.dnsRecords.find((r) => r.zoneId === z.id && r.type === 'TXT' && r.name === '_cloudlane')?.value || '';
+      const ip = esc(serverIp());
+      const dnsWidget = (t: string, n: string, v: string, copyable: boolean) =>
+        `<div class="dns-widget${copyable ? ' clickable' : ''}"${copyable ? ` data-action="copyRecord" data-copy="${attr(v)}" role="button" tabindex="0" aria-label="Copy ${esc(n)} record value"` : ''}><div class="dns-header"><span>Type</span><span>Name</span><span>Value</span></div><div class="dns-grid"><span class="dns-val">${t}</span><span class="dns-val">${esc(n)}</span><span class="dns-val${copyable ? '' : ' dim'}">${esc(v)}</span></div>${copyable ? `<div class="copy-overlay"><span class="copy-text">${ico('copy', 14)} Click to copy</span></div>` : ''}</div>`;
+      const checklist = `<div class="verify-check-row"><input type="checkbox" id="verifyAck" ${ui.verifyAck ? 'checked' : ''} aria-label="I've reviewed the DNS checklist" /><div class="verify-tip" tabindex="0"><span class="verify-check-text">I've reviewed the DNS checklist</span>${ico('info', 14)}<div class="verify-tip-box" role="tooltip"><strong>Before you verify</strong><ul><li>This panel never edits your DNS host — existing A/AAAA, CNAME, MX, SPF, DKIM and DMARC records stay exactly as they are.</li><li>DNSSEC and registrar DS records are untouched.</li><li>Your website and email keep resolving during and after verification.</li></ul></div></div></div>`;
+      const busy = ui.busy === 'verifyZoneConfirm';
+      const verifyBtn = ui.verifySuccess
+        ? `<button class="btn btn-primary verify-ok" disabled>${ico('check', 15)} Verified</button>`
+        : `<button class="btn btn-primary" data-action="verifyZoneConfirm" data-id="${z.id}" id="verifyDnsBtn" ${busy || ui.verifyAck ? '' : 'disabled'}>${busy ? '<span class="spin"></span> ' : ''}Verify DNS</button>`;
+      html = `
+        <div class="verify-context"><span class="muted small">Configure DNS for</span><span class="domain-chip mono">${esc(z.name)}</span></div>
+        <div class="verify-tabs" role="tablist" aria-label="Verification method">
+          <button class="verify-tab ${ui.verifyTab === 'txt' ? '' : 'active'}" data-action="verifyTab" data-tab="a" role="tab" aria-selected="${ui.verifyTab !== 'txt'}"><span class="verify-tab-stack"><span class="verify-tab-main">Method 1</span><span class="verify-tab-sub">A record</span></span><span class="tab-badge">Recommended</span></button>
+          <button class="verify-tab ${ui.verifyTab === 'txt' ? 'active' : ''}" data-action="verifyTab" data-tab="txt" role="tab" aria-selected="${ui.verifyTab === 'txt'}"><span class="verify-tab-stack"><span class="verify-tab-main">Method 2</span><span class="verify-tab-sub">TXT record</span></span></button>
+        </div>
+        <div class="verify-pane ${ui.verifyTab === 'txt' ? '' : 'active'}" data-pane="a">
+          <p class="instruction">Add this record at your DNS provider. It points ${esc(z.name)} at this server — which also proves you control the domain.</p>
+          ${dnsWidget('A', '@', ip, true)}
+          <p class="hint">If ${esc(z.name)} already serves a website elsewhere, use Method 2 instead — it proves ownership without redirecting traffic.</p>
+        </div>
+        <div class="verify-pane ${ui.verifyTab === 'txt' ? 'active' : ''}" data-pane="txt">
+          <p class="instruction">Add this TXT record at your DNS provider if you cannot modify A records.</p>
+          ${dnsWidget('TXT', '_cloudlane', token || '(generated when you press Verify DNS)', !!token)}
+          ${token ? '<p class="hint">Verification checks this exact value against live DNS — propagation can take a few minutes.</p>' : '<p class="hint">This zone has no verification token yet. Press Verify DNS and the server generates one, saves it under DNS Records, and checks for it automatically.</p>'}
+        </div>
+        ${checklist}
+        <div class="modal-footer verify-footer">${btn('Cancel', 'closeModal')}<span class="verify-actions">${verifyBtn}</span></div>`;
+    }
   }
+
   if (type === 'subdomain') {
     const z = domainZone((ui.modalData.zoneId as string) || (ui.domainZoneId as string));
     html = z ?
@@ -2098,10 +2132,49 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
     case 'connectHost':
       openModal('domainAttach', { zoneId: state.hostnames.find((h) => h.id === id)?.zoneId, hostnameId: id });
       break;
+    case 'verifyTab': {
+      const tab = String((el as HTMLElement).dataset.tab || 'a');
+      ui.verifyTab = tab;
+      document.querySelectorAll('.verify-tab').forEach((t) => {
+        const on = (t as HTMLElement).dataset.tab === tab;
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', String(on));
+      });
+      document.querySelectorAll('.verify-pane').forEach((p) => p.classList.toggle('active', (p as HTMLElement).dataset.pane === tab));
+      break;
+    }
+    case 'copyRecord': {
+      const widget = (el as HTMLElement).closest('.dns-widget') as HTMLElement | null;
+      void copyText(el.dataset.copy || '').then(() => {
+        if (!widget) return;
+        widget.classList.add('copied');
+        const t = widget.querySelector('.copy-text');
+        if (t) t.innerHTML = `${ico('check', 14)} Copied!`;
+        setTimeout(() => {
+          widget.classList.remove('copied');
+          if (t) t.innerHTML = `${ico('copy', 14)} Click to copy`;
+        }, 2000);
+      });
+      break;
+    }
     case 'verifyZoneConfirm': {
+      if (ui.busy) break;
       void apply('verifyZone', { zoneId: id }).then((ok) => {
-        ui.modal = null;
-        if (ok) { flash('DNS verification simulated. No public DNS was changed.'); go('domainDetail', id, null, 'overview'); }
+        if (ok) {
+          ui.verifySuccess = true;
+          render();
+          setTimeout(() => {
+            ui.modal = null;
+            ui.verifySuccess = false;
+            ui.verifyAck = false;
+            render();
+            flash('Domain verified against live DNS.');
+            go('domainDetail', id, null, 'overview');
+          }, 1100);
+        } else {
+          ui.verifyAck = false;
+          render();
+        }
       });
       break;
     }
@@ -2910,6 +2983,12 @@ async function onChange(e: Event): Promise<void> {
   if (target.id === 'confirmTypeInput') {
     ui.confirmTypeValue = target.value;
     syncConfirmButton();
+    return;
+  }
+  if (target.id === 'verifyAck') {
+    ui.verifyAck = target.checked;
+    const b = document.getElementById('verifyDnsBtn') as HTMLButtonElement | null;
+    if (b && !ui.busy) b.disabled = !target.checked;
     return;
   }
   if (target.id === 'mailDomain') {

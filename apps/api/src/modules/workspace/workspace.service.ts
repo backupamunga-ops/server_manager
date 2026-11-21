@@ -781,12 +781,20 @@ export class WorkspaceService {
         const z = await this.prisma.domainZone.create({
           data: { workspaceId: wsId, name, status: 'pending', dnsMode: 'manual', delegation: 'pending' },
         });
-        await this.prisma.hostname.create({ data: { zoneId: z.id, name, type: 'apex' } });
+        // The verification token must exist even if the apex hostname cannot be
+        // created (hostname names are globally unique — another workspace may
+        // already hold this name). Create the token FIRST, then the apex row.
         const verificationToken = `cloudlane-verify=${randomBytes(16).toString('hex')}`;
         await this.prisma.dnsRecord.create({
           data: { zoneId: z.id, type: 'TXT', name: '_cloudlane', value: verificationToken, ttl: 3600 },
         });
-        await this.activity(wsId, 'Domain registered', `${name} · manual DNS`, 'domain');
+        const hostTaken = await this.prisma.hostname.findUnique({ where: { name } });
+        if (hostTaken) {
+          await this.activity(wsId, 'Domain registered (apex hostname elsewhere)', `${name} · the hostname row already belongs to another workspace — subdomains and verification still work`, 'domain');
+        } else {
+          await this.prisma.hostname.create({ data: { zoneId: z.id, name, type: 'apex' } });
+          await this.activity(wsId, 'Domain registered', `${name} · manual DNS`, 'domain');
+        }
         break;
       }
       case 'verifyZone': {
@@ -800,7 +808,17 @@ export class WorkspaceService {
           );
         }
         const records = await this.prisma.dnsRecord.findMany({ where: { zoneId: z.id } });
-        const token = this.domains.resolveZoneToken(records) ?? '';
+        let token = this.domains.resolveZoneToken(records) ?? '';
+        if (!token.trim()) {
+          // Heal zones that predate token generation or were left tokenless by
+          // a partial registration: mint the challenge record now so the panel
+          // and live DNS checks stay in sync.
+          token = `cloudlane-verify=${randomBytes(16).toString('hex')}`;
+          await this.prisma.dnsRecord.create({
+            data: { zoneId: z.id, type: 'TXT', name: '_cloudlane', value: token, ttl: 3600 },
+          });
+          await this.activity(wsId, 'Verification token generated', `${z.name} · _cloudlane TXT`, 'domain');
+        }
         const serverIp = this.config.get<string>('SERVER_IP') || '95.211.164.33';
         const res = await this.domains.verifyOwnership(z.name, token, serverIp);
         if (!res.verified) {
