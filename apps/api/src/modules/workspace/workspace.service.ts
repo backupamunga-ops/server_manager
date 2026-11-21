@@ -597,6 +597,22 @@ export class WorkspaceService {
         void s;
         break;
       }
+      case 'deleteStorage': {
+        const s = await findService(p.serviceId);
+        if (s.kind !== 'storage') throw new BadRequestException('Not a storage service.');
+        const buckets = await this.prisma.bucket.findMany({ where: { storageServiceId: s.id } });
+        for (const b of buckets) {
+          await this.prisma.storageGrant.deleteMany({ where: { bucketId: b.id } });
+          await this.prisma.storageObject.deleteMany({ where: { bucketId: b.id } });
+        }
+        await this.prisma.storageGrant.deleteMany({ where: { storageServiceId: s.id } });
+        await this.prisma.serviceVariable.deleteMany({ where: { serviceId: s.id } });
+        await this.prisma.bucket.deleteMany({ where: { storageServiceId: s.id } });
+        await this.prisma.service.delete({ where: { id: s.id } });
+        for (const b of buckets) void this.storage.removeBucket(b.name);
+        await this.activity(wsId, 'Storage deleted', `${s.name} · ${buckets.length} bucket${buckets.length === 1 ? '' : 's'} removed from Garage`, 'system');
+        break;
+      }
       case 'removeVar': {
         const s = await findService(p.serviceId);
         const vars = await this.prisma.serviceVariable.findMany({
