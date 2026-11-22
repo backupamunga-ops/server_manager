@@ -982,7 +982,7 @@ function fileEditView(): string {
   }
   const kind = filesKind(fe.path, false);
   return `<button class="back" data-action="fileEditClose">${ico('back', 15)} Back to files</button>
-    <div class="heading"><div><div class="row" style="gap:10px"><span class="status-icon ${kind.color}" style="width:36px;height:36px">${ico(kind.icon, 18)}</span><h1 class="detail-title mono" style="font-size:19px">${esc(fe.path)}</h1>${badge(fe.dirty ? 'Unsaved' : 'Saved', fe.dirty ? 'warn' : 'ok')}</div><p class="detail-meta">${esc(s.name)} · live deployment · ${fe.loading ? 'loading…' : `${filesBytes(fe.size)} · last modified ${date(fe.modified)}`}</p></div>
+    <div class="heading"><div><div class="row" style="gap:10px"><span class="status-icon ${kind.color}" style="width:36px;height:36px">${ico(kind.icon, 18)}</span><h1 class="detail-title mono" style="font-size:19px">${esc(fe.path)}</h1><span id="fileEditDirty" class="tag ${fe.dirty ? 'warn' : 'ok'}">${fe.dirty ? 'Unsaved' : 'Saved'}</span></div><p class="detail-meta">${esc(s.name)} · live deployment · ${fe.loading ? 'loading…' : `${filesBytes(fe.size)} · last modified ${date(fe.modified)}`}</p></div>
     <div class="head-actions">
       ${btn(`${ico('upload', 15)} Download`, 'fileEditDownload', 'btn-small', `data-path="${attr(fe.path)}"`)}
       ${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${sid}"`)}
@@ -2273,8 +2273,6 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         fe.size = res.size;
         fe.dirty = false;
         flash(`Saved ${esc(fe.path)} (${filesBytes(res.size)}).`);
-        const b = document.getElementById('fileEditDirty');
-        if (b) { b.hidden = true; b.textContent = 'Saved'; b.className = 'badge ok'; }
         render();
       } catch (err) {
         flash(err instanceof ApiError ? err.message : 'Could not save the file.', true);
@@ -3456,7 +3454,7 @@ function onInput(e: Event): void {
     if (fe && !fe.dirty) {
       fe.dirty = true;
       const b = document.getElementById('fileEditDirty');
-      if (b) { b.hidden = false; b.textContent = 'Unsaved'; b.className = 'badge warn'; }
+      if (b) { b.textContent = 'Unsaved'; b.className = 'tag warn'; }
     }
     return;
   }
