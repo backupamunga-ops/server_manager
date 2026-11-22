@@ -811,10 +811,11 @@ interface FilesState {
   zipMode: 'file' | 'extract' | 'release';
   creating: string | null;
   error: string | null;
+  loadedFor: string | null;
 }
 const filesState = (): FilesState => {
   if (!ui.files) {
-    ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null } as FilesState;
+    ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null, loadedFor: null } as FilesState;
   }
   return ui.files as FilesState;
 };
@@ -874,6 +875,7 @@ function filesBreadcrumb(path: string): string {
 async function filesLoad(serviceId: string, path: string): Promise<void> {
   const f = filesState();
   f.path = path;
+  f.loadedFor = path; // set before the first render so the view doesn't re-trigger
   f.loading = true;
   render();
   try {
@@ -989,6 +991,9 @@ function fileEditView(): string {
 
 function appFilesView(s: ServiceRec): string {
   const f = filesState();
+  // Auto-load the current directory on first visit (view fns are sync — the
+  // fetch finishes and re-renders; loadedFor guards against loops).
+  if (f.loadedFor !== f.path && !f.loading) void filesLoad(s.id, f.path);
   const creating = f.creating;
   const parent = String(f.path || '').split('/').slice(0, -1).join('/');
   const rows = (f.error ? [] : f.items).map((it) => {
