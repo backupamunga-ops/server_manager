@@ -2273,7 +2273,10 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         fe.size = res.size;
         fe.dirty = false;
         flash(`Saved ${esc(fe.path)} (${filesBytes(res.size)}).`);
-        render();
+        // The identity-render guard can skip a full re-render here — flip the
+        // badge directly so it never goes stale after Ctrl+S.
+        const b = document.getElementById('fileEditDirty');
+        if (b) { b.textContent = 'Saved'; b.className = 'tag ok'; }
       } catch (err) {
         flash(err instanceof ApiError ? err.message : 'Could not save the file.', true);
       }
