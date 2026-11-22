@@ -103,7 +103,10 @@ function parsePath(path: string): { page: string; pId: string | null; sId: strin
     return { page, pId: null, sId: null, tab: tab ?? (seg[0] === 'settings' ? 'workspace' : 'overview') };
   }
   if (seg[0] === 'projects' && seg[1]) return { page: 'project', pId: seg[1], sId: null, tab: tab ?? null };
-  if (seg[0] === 'services' && seg[1]) return { page: 'service', pId: null, sId: seg[1], tab: tab ?? 'overview' };
+  if (seg[0] === 'services' && seg[1]) {
+    if (seg[2] === 'files' && seg[3] === 'edit') return { page: 'fileEdit', pId: null, sId: seg[1], tab: 'edit' };
+    return { page: 'service', pId: null, sId: seg[1], tab: tab ?? 'overview' };
+  }
   if (seg[0] === 'domains' && seg[1]) return { page: 'domainDetail', pId: seg[1], sId: null, tab: tab ?? 'overview' };
   return { page: 'overview', pId: null, sId: null, tab: 'overview' };
 }
@@ -112,6 +115,7 @@ function buildPath(page: string, pId: string | null, sId: string | null, tab: st
   const seg = inv[page] ?? page;
   if (page === 'project' && pId) return `/projects/${pId}`;
   if (page === 'service' && sId) return `/services/${sId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
+  if (page === 'fileEdit' && sId) return `/services/${sId}/files/edit?path=${encodeURIComponent(String(ui.filePath ?? ''))}`;
   if (page === 'domainDetail' && pId) return `/domains/${pId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
   if (page === 'settings' && tab && tab !== 'workspace') return `/settings?tab=${tab}`;
   return `/${seg}`;
@@ -143,7 +147,9 @@ let ui: Record<string, unknown> = {
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   confirmTypeValue: '',
   busy: null as string | null,
-  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; openPath: string | null; draft: string; zipMode: string; creating: string | null; error: string | null },
+  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null },
+  fileEdit: null as null | { serviceId: string; path: string; loading: boolean; content: string; size: number; modified: string; dirty: boolean; error: string | null },
+  filePath: '',
 };
 
 /* Server sync — mutations go through runAction / real endpoints. */
@@ -767,7 +773,7 @@ function serviceView(): string {
   if (s.kind === 'storage') return storageServiceView(s);
   const p = project(s.projectId);
   const app = s.kind === 'application';
-  const tabs = app ? ['overview', 'deployments', 'logs', 'files', 'terminal', 'domains', 'variables', 'artifacts', 'volumes', 'settings']
+  const tabs = app ? ['overview', 'deployments', 'logs', 'files', 'terminal', 'domains', 'variables', 'volumes', 'settings']
     : s.kind === 'database' ? ['overview', 'connections', 'console', 'users', 'backups', 'settings']
     : ['overview', 'executions', 'settings'];
   const sub = s.kind === 'database' ? `${s.engine} · ${s.database}`
@@ -781,7 +787,6 @@ function applicationService(s: ServiceRec): string {
   const d = ds[0];
   if (ui.tab === 'terminal') return terminalView(s);
   if (ui.tab === 'files') return appFilesView(s);
-  if (ui.tab === 'artifacts') return appArtifactsView(s);
   if (ui.tab === 'volumes') return appVolumesView(s);
   if (ui.tab === 'overview')
     return `<div class="ov-grid"><div class="ov-left"><div class="card ov-card"><div class="ov-head"><h3 class="section-title">Live application</h3>${statusBadge(s.status === 'running' ? 'live' : s.status)}</div><p class="ov-note">Production deployment endpoint</p><div class="ov-endpoint"><div class="ov-overline">Public URL</div><div class="ov-endpoint-inline">${primaryDomain(s.id) !== 'Not configured' ? `<a class="ov-url" href="https://${attr(primaryDomain(s.id))}" target="_blank" rel="noopener noreferrer" title="https://${attr(primaryDomain(s.id))}">https://${esc(primaryDomain(s.id))}</a>${btn(`${ico('copy', 14)} Copy`, 'copy', 'btn-small ov-copy', `data-copy="https://${attr(primaryDomain(s.id))}"`)}` : `<span class="ov-url" style="color:var(--muted)">Not configured — connect a domain first</span>`}</div></div></div><div class="card ov-card"><div class="ov-head"><h3 class="section-title">Health &amp; networking</h3></div><div class="ov-rows"><div class="ov-row"><span class="k">Health check</span>${statusBadge(s.status === 'running' ? 'healthy' : s.status)}</div><div class="ov-row"><span class="k">Domains</span><strong>${domainsFor(s.id).length}</strong></div><div class="ov-row"><span class="k">Build strategy</span><strong>Auto-detected</strong></div><div class="ov-row"><span class="k">Source control</span><strong>${s.source === 'github' ? 'GitHub repository' : 'Uploaded archive'}</strong></div><div class="ov-row"><button type="button" class="ov-row-link k" data-action="serviceTab" data-tab="deployments" title="View deployment history">Latest deployment</button><div class="ov-actions">${d ? `<strong class="mono" title="${attr(d.revision)}">${age(d.created)}</strong><span class="ov-vline"></span>${btn('View logs', 'serviceTab', 'ov-row-action', 'data-tab="logs"')}` : '<strong>None yet</strong>'}</div></div>${d && d.status !== 'LIVE' && d.status !== 'FAILED' ? `<div class="progress skeleton" style="margin-top:4px"><span style="width:${Math.max(8, Number(d.stage) * 12)}%"></span></div>` : ''}</div></div></div><div class="card ov-preview"><div class="ov-head"><h3 class="section-title">Live preview</h3>${primaryDomain(s.id) !== 'Not configured' ? btn(`Open in new tab ${ico('external', 13)}`, 'openExternal', 'btn-small', `data-url="https://${attr(primaryDomain(s.id))}"`) : ''}</div>${isVisualApp(s) && primaryDomain(s.id) !== 'Not configured' ? `<div id="preview-scale-box"><iframe id="preview-frame" src="https://${attr(primaryDomain(s.id))}" loading="lazy" sandbox="allow-same-origin allow-scripts allow-forms allow-popups" style="width:1440px;height:875px;border:0;transform-origin:0 0;pointer-events:none" title="Live preview"></iframe></div><p class="ov-caption">Live view of the production URL. Use Open in new tab for the full app.</p>` : `<div class="ov-fallback">${ico('terminal', 24)}<span class="small">Backend service — no visual preview</span></div><p class="ov-caption">This service does not expose a browser UI.</p>`}</div></div><div class="ov-facts-foot"><h2>Project details</h2><div class="ov-facts"><span>Framework: <strong>${esc(s.framework)}</strong></span><span>Environment: <strong>production</strong></span><span>Role: <strong>${cap(s.role)}</strong></span><span>Runtime: <strong>Docker</strong></span></div></div>`;
@@ -803,23 +808,56 @@ interface FilesState {
   path: string;
   items: { name: string; path: string; type: string; size: number; modified: string }[];
   loading: boolean;
-  openPath: string | null;
-  draft: string;
   zipMode: 'file' | 'extract' | 'release';
   creating: string | null;
   error: string | null;
 }
 const filesState = (): FilesState => {
   if (!ui.files) {
-    ui.files = { path: '', items: [], loading: false, openPath: null, draft: '', zipMode: 'extract', creating: null, error: null } as FilesState;
+    ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null } as FilesState;
   }
   return ui.files as FilesState;
 };
+
+interface FileEditState {
+  serviceId: string;
+  path: string;
+  loading: boolean;
+  content: string;
+  size: number;
+  modified: string;
+  dirty: boolean;
+  error: string | null;
+}
+
+/** File-type → icon + accent chip, matching the design-system status colors. */
+function filesKind(name: string, isDir: boolean): { icon: string; color: string } {
+  if (isDir) return { icon: 'projects', color: 'gold' };
+  const ext = (name.includes('.') ? name.split('.').pop()! : '').toLowerCase();
+  if (['js', 'mjs', 'cjs', 'ts', 'jsx', 'tsx', 'php', 'py', 'rb'].includes(ext)) return { icon: 'code', color: 'mint' };
+  if (ext === 'json') return { icon: 'code', color: 'blue' };
+  if (['html', 'htm', 'css', 'scss', 'vue', 'svelte'].includes(ext)) return { icon: 'overview', color: 'purple' };
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'avif'].includes(ext)) return { icon: 'file', color: 'mint' };
+  if (ext === 'pdf' || ext === 'doc' || ext === 'docx') return { icon: 'file', color: 'gold' };
+  if (['zip', 'tar', 'gz', 'tgz', 'rar', '7z'].includes(ext)) return { icon: 'storage', color: 'blue' };
+  if (ext === 'env' || name.startsWith('.env') || ['pem', 'key', 'crt'].includes(ext)) return { icon: 'key', color: 'gold' };
+  if (['md', 'txt', 'log', 'yml', 'yaml', 'toml', 'lock', 'example'].includes(ext)) return { icon: 'code', color: '' };
+  return { icon: 'file', color: '' };
+}
 
 function filesBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function filesWhen(iso: string): string {
+  if (!iso || iso === '1970-01-01T00:00:00.000Z') return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return 'just now';
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
 function filesBreadcrumb(path: string): string {
@@ -891,38 +929,97 @@ async function filesHandleZip(serviceId: string, file: File): Promise<void> {
   }
 }
 
+/* ── Full-page editor (opened in its own browser tab) ── */
+function fileEditUrl(serviceId: string, path: string): string {
+  return `/services/${serviceId}/files/edit?path=${encodeURIComponent(path)}`;
+}
+
+async function loadFileEdit(): Promise<void> {
+  const w = window as unknown as { __fileEditUnloadWired?: boolean };
+  if (!w.__fileEditUnloadWired) {
+    w.__fileEditUnloadWired = true;
+    window.addEventListener('beforeunload', (e) => {
+      const fe = ui.fileEdit as FileEditState | null;
+      if (fe?.dirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+  }
+  const fe = ui.fileEdit as FileEditState | null;
+  if (!fe) return;
+  fe.loading = true;
+  render();
+  try {
+    const res = await api.serviceFiles.read(fe.serviceId, fe.path);
+    fe.content = res.content;
+    fe.size = res.size;
+    fe.modified = res.modified;
+    fe.error = null;
+    fe.dirty = false;
+  } catch (err) {
+    fe.error = err instanceof ApiError ? err.message : 'Could not open the file.';
+  }
+  fe.loading = false;
+  render();
+}
+
+function fileEditView(): string {
+  const sid = ui.serviceId as string;
+  const s = service(sid);
+  const wantPath = new URLSearchParams(window.location.search).get('path') || '';
+  const fe = ui.fileEdit as FileEditState | null;
+  if (!s) return emptyMissing('Service');
+  if (!fe || fe.serviceId !== sid || fe.path !== wantPath) {
+    ui.fileEdit = { serviceId: sid, path: wantPath, loading: true, content: '', size: 0, modified: '', dirty: false, error: null } as FileEditState;
+    void loadFileEdit();
+    return `<button class="back" data-action="fileEditClose">${ico('back', 15)} Back to files</button><div class="card"><p class="muted small">Opening ${esc(wantPath)}…</p></div>`;
+  }
+  if (fe.error) {
+    return `<button class="back" data-action="fileEditClose">${ico('back', 15)} Back to files</button><div class="card empty"><h3>Could not open the file</h3><p>${esc(fe.error)}</p></div>`;
+  }
+  const kind = filesKind(fe.path, false);
+  return `<button class="back" data-action="fileEditClose">${ico('back', 15)} Back to files</button>
+    <div class="heading"><div><div class="row" style="gap:10px"><span class="status-icon ${kind.color}" style="width:36px;height:36px">${ico(kind.icon, 18)}</span><h1 class="detail-title mono" style="font-size:19px">${esc(fe.path)}</h1>${badge(fe.dirty ? 'Unsaved' : 'Saved', fe.dirty ? 'warn' : 'ok')}</div><p class="detail-meta">${esc(s.name)} · live deployment · ${fe.loading ? 'loading…' : `${filesBytes(fe.size)} · last modified ${date(fe.modified)}`}</p></div>
+    <div class="head-actions">
+      ${btn(`${ico('upload', 15)} Download`, 'fileEditDownload', 'btn-small', `data-path="${attr(fe.path)}"`)}
+      ${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${sid}"`)}
+      ${btn(`${ico('check', 15)} Save`, 'fileEditSave', 'btn-primary', `data-path="${attr(fe.path)}"`)}
+    </div></div>
+    <div class="card" style="padding:0;overflow:hidden"><textarea id="fileEditor" class="sql-editor" style="width:100%;min-height:60vh;border:0;border-radius:0;background:transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;line-height:1.65;padding:16px 18px;box-shadow:none" spellcheck="false" placeholder="Empty file — start typing…">${esc(fe.content)}</textarea></div>
+    <div class="soft-banner" style="margin-top:14px">${ico('code', 18)}<div><strong class="small">Save with Ctrl+S</strong><p class="muted xs">Saves write straight to the running deployment. Static files are live immediately; if the app reads files at boot, press Restart app.</p></div></div>`;
+}
+
 function appFilesView(s: ServiceRec): string {
   const f = filesState();
-  const editor = f.openPath;
   const creating = f.creating;
   const parent = String(f.path || '').split('/').slice(0, -1).join('/');
-  const rows = (f.error ? [] : f.items).map((it) => `<tr>
-    <td class="main-cell">${it.type === 'dir'
-      ? `<button class="link mono" data-action="filesOpen" data-path="${attr(it.path)}">${ico('projects', 14)} ${esc(it.name)}/</button>`
-      : `<span class="mono">${ico('file', 14)} ${esc(it.name)}</span>`}</td>
-    <td class="mono muted">${it.type === 'dir' ? '—' : filesBytes(it.size)}</td>
-    <td class="muted xs">${it.modified && it.modified !== '1970-01-01T00:00:00.000Z' ? date(it.modified) : '—'}</td>
-    <td><div class="row">${it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : ''}${btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}" data-name="${attr(it.name)}"`)}</div></td>
-  </tr>`).join('');
-  return `<div class="row space" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
-    <div><h3 class="section-title">Deployment files</h3><p class="muted xs">Live release of ${esc(s.name)} · edits apply to the running deployment directory</p></div>
+  const rows = (f.error ? [] : f.items).map((it) => {
+    const k = filesKind(it.name, it.type === 'dir');
+    const chip = `<span class="status-icon ${k.color}" style="width:28px;height:28px;flex:none">${ico(k.icon, 15)}</span>`;
+    const nameCell = it.type === 'dir'
+      ? `<button class="link" data-action="filesOpen" data-path="${attr(it.path)}"><strong>${esc(it.name)}/</strong></button>`
+      : `<span class="mono small">${esc(it.name)}</span>`;
+    return `<tr data-file-name="${attr(it.name.toLowerCase())}">
+    <td class="main-cell"><div class="row" style="gap:10px">${chip}<div><div>${nameCell}</div><div class="muted xs" style="margin-top:2px">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · <span title="${attr(it.modified)}">${filesWhen(it.modified)}</span></div></div></div></td>
+    <td style="width:1%;white-space:nowrap"><div class="row" style="gap:6px">${it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : ''}${it.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path="${attr(it.path)}"`) : ''}${btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}" data-name="${attr(it.name)}"`)}</div></td>
+  </tr>`;
+  }).join('');
+  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
+    <div><h3 class="section-title">Deployment files</h3><p class="muted xs">Live release of ${esc(s.name)} — browse, patch, upload and restart without a redeploy</p></div>
     <div class="row" style="gap:8px;flex-wrap:wrap">
-      ${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${s.id}"`)}
-      ${btn(`${ico('plus', 14)} File`, 'filesNew', 'btn-small', `data-kind="file"`)}
-      ${btn(`${ico('projects', 14)} Folder`, 'filesNew', 'btn-small', `data-kind="folder"`)}
-      ${btn(`${ico('upload', 14)} Upload file`, 'filesPick', 'btn-small', `data-mode="file"`)}
-      ${btn(`${ico('storage', 14)} Upload ZIP → extract here`, 'filesPick', 'btn-small', `data-mode="extract"`)}
-      ${btn(`${ico('deployments', 14)} Deploy ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode="release"`)}
+      <span class="row" style="gap:6px;margin-right:6px">${ico('plus', 13)}${btn('File', 'filesNew', 'btn-small', `data-kind="file"`)}${btn('Folder', 'filesNew', 'btn-small', `data-kind="folder"`)}${btn('Upload file', 'filesPick', 'btn-small', `data-mode="file"`)}</span>
+      <span class="row" style="gap:6px">${btn(`${ico('storage', 14)} ZIP → extract here`, 'filesPick', 'btn-small', `data-mode="extract"`)}${btn(`${ico('deployments', 14)} ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode="release"`)}${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${s.id}"`)}</span>
     </div></div>
     <input type="file" id="filesZipInput" hidden ${f.zipMode === 'release' ? 'accept=".zip"' : ''} />
     ${creating ? `<div class="card" style="margin-bottom:14px"><form id="filesCreateForm" class="row" style="gap:10px;padding:4px 0"><input id="filesCreateName" class="mono" style="flex:1" maxlength="200" autocomplete="off" spellcheck="false" placeholder="${creating === 'file' ? 'new-file.js' : 'new-folder'}" /><button class="btn btn-primary btn-small" type="submit">Create ${esc(creating)}</button><button class="btn btn-small" type="button" data-action="filesCancelCreate">Cancel</button></form></div>` : ''}
-    <div class="card table-frame"><div class="table-wrap">
-      <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--line);gap:6px;flex-wrap:wrap">${ico('search', 13)} ${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 13)} Up`, 'filesOpen', 'btn-small', `data-path="${attr(parent)}"`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
-      <table class="table"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
-      <tbody>${f.error ? `<tr><td colspan="4" class="muted">${esc(f.error)}</td></tr>` : rows || `<tr><td colspan="4"><div class="empty"><h3>Empty directory</h3><p>Upload a ZIP, add files, or deploy a release.</p></div></td></tr>`}</tbody></table>
-    </div></div>
-    ${editor ? `<div class="card" style="margin-top:16px"><div class="row space" style="flex-wrap:wrap;gap:10px"><div><h3 class="section-title">Editing <span class="mono">${esc(editor)}</span></h3><p class="muted xs">Plain-text editor · saves write through to the live deployment</p></div><div class="row">${btn(`${ico('check', 14)} Save`, 'filesSave', 'btn-primary btn-small', `data-id="${s.id}" data-path="${attr(editor)}"`)}${btn('Close', 'filesCloseEdit', 'btn-small')}</div></div><textarea id="fileEditor" class="sql-editor" style="min-height:340px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px" spellcheck="false">${esc(f.draft)}</textarea><p class="hint">Changes are live on save for static files. Restart the app if it reads files only at boot.</p></div>` : ''}
-    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “Deploy ZIP as release” makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy.</p></div></div>`;
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="row space" style="padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap">
+        <div class="row" style="gap:6px;flex-wrap:wrap">${ico('projects', 14)}${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 12)} Up`, 'filesOpen', 'btn-small', `data-path="${attr(parent)}"`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
+        <input id="filesSearch" placeholder="Filter by name…" autocomplete="off" spellcheck="false" style="max-width:210px" />
+      </div>
+      <div class="table-wrap"><table class="table">
+      <thead><tr><th>Name</th><th style="width:1%;white-space:nowrap;text-align:right;padding-right:16px">Actions</th></tr></thead>
+      <tbody>${f.error ? `<tr><td colspan="2"><div class="empty"><h3>${esc(f.error)}</h3></div></td></tr>` : rows || `<tr><td colspan="2"><div class="empty"><h3>Empty directory</h3><p>Upload a ZIP, add files, or deploy a release.</p></div></td></tr>`}</tbody></table></div>
+    </div>
+    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release” makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>`;
 }
 
 const safePreviewCommands = ['help', 'pwd', 'ls', 'ls -la', 'whoami', 'node --version',
@@ -1183,15 +1280,6 @@ function storageSettingsView(s: ServiceRec): string {
   return `<div class="grid two"><div class="card"><h3 class="section-title">Storage settings</h3><div class="divider"></div><div class="kv"><span class="k">Name</span><span class="v mono">${esc(s.name)}</span><span class="k">Provider</span><span class="v">${esc(s.provider)}</span><span class="k">Deployment</span><span class="v">External integration (simulated)</span><span class="k">Data reference</span><span class="v">Bucket + object key</span><span class="k">Host filesystem</span><span class="v">Never exposed</span></div></div><div class="card"><h3 class="section-title">Provider integration</h3><p class="muted small">In production, connect a provider through a scoped integration with encrypted credentials. Bucket operations use Cloudlane's permission-checked API, never client-side master keys.</p><div class="divider"></div>${badge('Connection not configured · demo', 'warn')}<div style="margin-top:16px">${btn('Review integrations', 'settingsTab', '', 'data-tab="integrations" data-from-storage="true"')}</div></div></div>`;
 }
 
-function appArtifactsView(s: ServiceRec): string {
-  const d = deploymentsFor(s.id)[0];
-  const names = s.framework === 'Static HTML' ? ['index.html', 'assets/', 'styles.css']
-    : s.framework === 'Next.js' ? ['package.json', 'next.config.js', 'app/', '.next/ (build output)']
-    : s.framework === 'React/Vite' ? ['package.json', 'src/', 'dist/']
-    : ['package.json', 'src/', 'dist/', 'node_modules/'];
-  return `${storageBanner()}<div class="grid two-wide"><div class="card"><div class="row space"><h3 class="section-title">Deployment artifacts</h3>${badge('Read-only', 'blue')}</div><p class="muted small">Illustrative artifact manifest from the latest release; no actual source contents are loaded.</p><div class="divider"></div>${names.map((n) => `<div class="file-row" style="padding:12px 0"><span class="status-icon">${ico(n.endsWith('/') ? 'folder' : 'file', 15)}</span><span class="mono small">${esc(n)}</span><span style="margin-left:auto" class="muted xs">${n.endsWith('/') ? 'Directory' : 'File'}</span></div>`).join('')}</div><div class="card"><h3 class="section-title">Immutable application release</h3><div class="kv"><span class="k">Release</span><span class="v mono">${esc(d?.revision || 'Pending')}</span><span class="k">Source</span><span class="v">${esc(s.source === 'github' ? 'GitHub' : 'ZIP Upload')}</span><span class="k">Editing</span><span class="v">Disabled</span><span class="k">Changes</span><span class="v">Deploy a new release</span></div><div class="divider"></div>${btn('View deployments', 'serviceTab', '', 'data-tab="deployments"')}<p class="hint">This is not a live filesystem explorer. Changes must use the deployment pipeline.</p></div></div>`;
-}
-
 function appVolumesView(s: ServiceRec): string {
   const vols = state.volumes.filter((v) => v.serviceId === s.id);
   return `${storageBanner()}<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Persistent volumes</h3><p class="muted xs">Managed allocations for stateful application data. Separate from object storage and deployment files.</p></div>${btn(`${ico('plus', 15)} Allocate volume`, 'openModal', 'btn-primary', 'data-modal="volumeCreate"')}</div><div class="card">${vols.length ? vols.map((v) => `<div class="storage-attach"><div class="row"><span class="status-icon">${ico('disk', 19)}</span><div><strong class="small">${esc(v.name)}</strong><div class="detail mono">Container mount: ${esc(v.mount)} · ${v.quotaMB} MB limit</div></div></div>${badge('Allocated', 'ok')}</div>`).join('') : '<div class="storage-empty">No persistent volumes attached to this application.</div>'}</div><div class="storage-tip" style="margin-top:16px">Volumes are never exposed as host OS paths. No arbitrary bind mounts. Real volume deletion and backup require explicit retention safeguards.</div>`;
@@ -1202,7 +1290,7 @@ function docsView(): string {
  <div class="soft-banner" style="margin-bottom:19px">${ico('info', 20)}<div><strong class="small">Architecture specification, not a running HTTP API</strong><p>This page is an interactive documentation preview; no public endpoints or credentials exist yet.</p></div></div>
  <div class="grid two-wide"><div class="card"><h3 class="section-title">API principles</h3><div class="divider"></div><div class="col" style="gap:10px"><div>${badge('REST /api/v1', 'blue')} ${badge('Bearer tokens', 'blue')}</div><p class="muted small">Versioned endpoints, workspace-scoped authorization, idempotency keys for provisioning, and audit events.</p><div class="docs-code">GET    /api/v1/projects\nPOST   /api/v1/projects\nPOST   /api/v1/deployments\nGET    /api/v1/domains\nPOST   /api/v1/databases\nPOST   /api/v1/cron-jobs</div>${btn('Manage demo API keys', 'settingsTab', '', 'data-tab="api" data-from-docs="true"')}</div></div><div class="card"><h3 class="section-title">Our five product principles</h3><div class="divider"></div><div class="col" style="gap:14px">${[['AI-native management', 'Guided diagnosis and permission-checked plans'], ['Unified workspace', 'One project model and shared resources'], ['Zero-friction deployments', 'ZIP and GitHub share a single pipeline'], ['Self-healing infrastructure', 'Health checks, safe restarts, rollback and alerts'], ['Expandable by design', 'From one VPS to multiple agents and teams']].map(([a, b], i) => `<div class="row" style="align-items:flex-start"><span class="status-icon mint">${i + 1}</span><div><strong class="small">${a}</strong><div class="muted xs">${b}</div></div></div>`).join('')}</div></div></div>
  <div class="card" style="margin-top:17px"><div class="row">${ico('terminal', 20)}<h3 class="section-title">Terminal and SSH boundaries</h3></div><div class="divider"></div><p class="muted small">Application terminals run only inside their authorized containers, and database consoles are distinct read-only previews. Server SSH belongs to external administrators. Cloudlane API tokens authorize API scopes only; they are never operating-system login credentials.</p><div class="row" style="margin-top:15px">${btn('Server access policy', 'settingsTab', '', 'data-tab="server" data-from-docs="true"')}${btn('Security settings', 'settingsTab', '', 'data-tab="security" data-from-docs="true"')}</div></div>
- <div class="card" style="margin-top:17px"><h3 class="section-title">Object Storage and file boundaries</h3><div class="divider"></div><div class="safety-split"><div class="safety-unit">${ico('code', 20)}<h3>Deployment artifacts</h3><p>Inspect a synthetic manifest. Production files remain immutable and change through new releases.</p></div><div class="safety-unit">${ico('bucket', 20)}<h3>Objects and buckets</h3><p>Media and KYC stored under bucket IDs and object keys. Never expose host paths.</p></div><div class="safety-unit">${ico('disk', 20)}<h3>Persistent volumes</h3><p>Explicit named allocations, restricted container mount points and independent backups.</p></div></div><p class="hint">API concepts: /api/v1/storage, /buckets, /objects, /grants and /volumes.</p></div>`;
+ <div class="card" style="margin-top:17px"><h3 class="section-title">Object Storage and file boundaries</h3><div class="divider"></div><div class="safety-split"><div class="safety-unit">${ico('code', 20)}<h3>Deployment files</h3><p>Live files of each release are browsable and editable in the Files tab; production changes flow through the real pipeline.</p></div><div class="safety-unit">${ico('bucket', 20)}<h3>Objects and buckets</h3><p>Media and KYC stored under bucket IDs and object keys. Never expose host paths.</p></div><div class="safety-unit">${ico('disk', 20)}<h3>Persistent volumes</h3><p>Explicit named allocations, restricted container mount points and independent backups.</p></div></div><p class="hint">API concepts: /api/v1/storage, /buckets, /objects, /grants and /volumes.</p></div>`;
 }
 
 function aiSuggestions(): string[] {
@@ -2160,40 +2248,43 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       break;
     }
     case 'filesEdit': {
-      const sid = ui.serviceId as string;
-      const f = filesState();
-      try {
-        const res = await api.serviceFiles.read(sid, String(el.dataset.path ?? ''));
-        f.openPath = res.path;
-        f.draft = res.content;
-        render();
-        const ta = document.getElementById('fileEditor') as HTMLTextAreaElement | null;
-        if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-      } catch (err) {
-        flash(err instanceof ApiError ? err.message : 'Could not open the file.', true);
-      }
+      const sid = String(el.dataset.id ?? ui.serviceId ?? '');
+      const path = String(el.dataset.path ?? '');
+      if (!sid || !path) break;
+      window.open(fileEditUrl(sid, path), '_blank', 'noopener');
       break;
     }
-    case 'filesCloseEdit': {
-      const f = filesState();
-      f.openPath = null;
-      f.draft = '';
-      render();
-      break;
-    }
-    case 'filesSave': {
-      const sid = ui.serviceId as string;
-      const f = filesState();
-      const path = String(el.dataset.path ?? f.openPath ?? '');
+    case 'fileEditSave': {
+      const fe = ui.fileEdit as FileEditState | null;
+      if (!fe) break;
       const ta = document.getElementById('fileEditor') as HTMLTextAreaElement | null;
-      const content = ta ? ta.value : f.draft;
-      f.draft = content;
+      const content = ta ? ta.value : fe.content;
       try {
-        const res = await api.serviceFiles.save(sid, path, content);
-        flash(`Saved ${esc(path)} (${filesBytes(res.size)}).`);
+        const res = await api.serviceFiles.save(fe.serviceId, fe.path, content);
+        fe.content = content;
+        fe.size = res.size;
+        fe.dirty = false;
+        flash(`Saved ${esc(fe.path)} (${filesBytes(res.size)}).`);
+        const b = document.getElementById('fileEditDirty');
+        if (b) { b.hidden = true; b.textContent = 'Saved'; b.className = 'badge ok'; }
+        render();
       } catch (err) {
         flash(err instanceof ApiError ? err.message : 'Could not save the file.', true);
       }
+      break;
+    }
+    case 'fileEditDownload': {
+      const sid = ui.page === 'fileEdit' ? String((ui.fileEdit as FileEditState | null)?.serviceId ?? ui.serviceId) : String(ui.serviceId);
+      const path = String(el.dataset.path ?? (ui.fileEdit as FileEditState | null)?.path ?? '');
+      if (!sid || !path) break;
+      window.open(`/api/v1/services/${sid}/files/raw?path=${encodeURIComponent(path)}`, '_blank', 'noopener');
+      break;
+    }
+    case 'fileEditClose': {
+      const fe = ui.fileEdit as FileEditState | null;
+      ui.fileEdit = null;
+      if (window.opener && fe) { window.close(); break; }
+      go('service', null, ui.serviceId as string, 'files');
       break;
     }
     case 'filesDelete': {
@@ -3223,6 +3314,12 @@ function onKeyDown(e: KeyboardEvent): void {
     ui.modalData = {};
     render();
   }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && ui.page === 'fileEdit') {
+    e.preventDefault();
+    const btnEl = document.querySelector('[data-action="fileEditSave"]') as HTMLElement | null;
+    if (btnEl) void doAction('fileEditSave', btnEl, e);
+    return;
+  }
   if ((e.key === 'Enter' || e.key === ' ') && (e.target as HTMLElement).matches('[role="button"][data-action]')) {
     e.preventDefault();
     const el = e.target as HTMLElement;
@@ -3339,6 +3436,22 @@ async function onChange(e: Event): Promise<void> {
 }
 function onInput(e: Event): void {
   const target = e.target as HTMLInputElement;
+  if (target.id === 'filesSearch') {
+    const term = target.value.toLowerCase().trim();
+    document.querySelectorAll('tr[data-file-name]').forEach((r) => {
+      (r as HTMLElement).hidden = !!term && !(r.getAttribute('data-file-name') || '').includes(term);
+    });
+    return;
+  }
+  if (target.id === 'fileEditor') {
+    const fe = ui.fileEdit as FileEditState | null;
+    if (fe && !fe.dirty) {
+      fe.dirty = true;
+      const b = document.getElementById('fileEditDirty');
+      if (b) { b.hidden = false; b.textContent = 'Unsaved'; b.className = 'badge warn'; }
+    }
+    return;
+  }
   if (target.id === 'confirmTypeInput') {
     ui.confirmTypeValue = target.value;
     syncConfirmButton();
@@ -3453,7 +3566,8 @@ export function mountApp(): () => void {
         .map((d) => d.id).sort().join(',');
       if (!pollFirstSeen[key]) pollFirstSeen[key] = Date.now();
       // A deployment stuck non-final must not re-render the whole app forever.
-      if (Date.now() - pollFirstSeen[key] < 15 * 60 * 1000) void syncState().then(render);
+      // Never stomp the full-page file editor while the user is typing.
+      if (Date.now() - pollFirstSeen[key] < 15 * 60 * 1000 && ui.page !== 'fileEdit') void syncState().then(render);
     } else {
       pollFirstSeen = {};
     }

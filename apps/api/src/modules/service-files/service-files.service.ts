@@ -132,6 +132,32 @@ export class ServiceFilesService {
     return { path: relPath ?? '', items };
   }
 
+  /** Raw file bytes for download (any file type, up to 100 MB). */
+  async readRaw(
+    userId: string,
+    serviceId: string,
+    relPath: string,
+  ): Promise<{ data: Buffer; size: number }> {
+    const { root } = await this.activeRoot(userId, serviceId);
+    if (!relPath) {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'File path is required.' });
+    }
+    const target = this.resolveIn(root, relPath);
+    const st = await stat(target).catch(() => {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'File not found.' });
+    });
+    if (!st.isFile()) {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Not a regular file.' });
+    }
+    if (st.size > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: `File too large to download (${Math.round(st.size / 1024 / 1024)} MB). Maximum ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`,
+      });
+    }
+    return { data: await readFile(target), size: st.size };
+  }
+
   async readContent(
     userId: string,
     serviceId: string,

@@ -9,11 +9,13 @@ import {
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import { basename } from 'node:path';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
@@ -80,6 +82,22 @@ export class ServiceFilesController {
     @CurrentUser() user: { userId: string },
   ) {
     return await this.files.readContent(user.userId, serviceId, path ?? '');
+  }
+
+  /** Raw download — any file type, attachment disposition, session-authed. */
+  @Get('raw')
+  async raw(
+    @Param('serviceId') serviceId: string,
+    @Query('path') path: string,
+    @Res() res: Response,
+    @CurrentUser() user: { userId: string },
+  ): Promise<void> {
+    const { data } = await this.files.readRaw(user.userId, serviceId, path ?? '');
+    const name = basename(String(path ?? 'download')).replace(/["\\\r\n]/g, '') || 'download';
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.setHeader('Content-Length', String(data.length));
+    res.end(data);
   }
 
   @Put('content')
