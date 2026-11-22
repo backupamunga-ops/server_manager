@@ -104,7 +104,7 @@ function parsePath(path: string): { page: string; pId: string | null; sId: strin
   }
   if (seg[0] === 'projects' && seg[1]) return { page: 'project', pId: seg[1], sId: null, tab: tab ?? null };
   if (seg[0] === 'services' && seg[1]) {
-    if (seg[2] === 'files' && seg[3] === 'edit') return { page: 'fileEdit', pId: null, sId: seg[1], tab: 'edit' };
+    if (q.get('edit') !== null) return { page: 'fileEdit', pId: null, sId: seg[1], tab: 'edit' };
     return { page: 'service', pId: null, sId: seg[1], tab: tab ?? 'overview' };
   }
   if (seg[0] === 'domains' && seg[1]) return { page: 'domainDetail', pId: seg[1], sId: null, tab: tab ?? 'overview' };
@@ -115,7 +115,7 @@ function buildPath(page: string, pId: string | null, sId: string | null, tab: st
   const seg = inv[page] ?? page;
   if (page === 'project' && pId) return `/projects/${pId}`;
   if (page === 'service' && sId) return `/services/${sId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
-  if (page === 'fileEdit' && sId) return `/services/${sId}/files/edit?path=${encodeURIComponent(String(ui.filePath ?? ''))}`;
+  if (page === 'fileEdit' && sId) return `/services/${sId}?edit=${encodeURIComponent(String(ui.filePath ?? ''))}`;
   if (page === 'domainDetail' && pId) return `/domains/${pId}${tab && tab !== 'overview' ? `?tab=${tab}` : ''}`;
   if (page === 'settings' && tab && tab !== 'workspace') return `/settings?tab=${tab}`;
   return `/${seg}`;
@@ -931,9 +931,12 @@ async function filesHandleZip(serviceId: string, file: File): Promise<void> {
   }
 }
 
-/* ── Full-page editor (opened in its own browser tab) ── */
+/* ── Full-page editor (opened in its own browser tab) ──
+ * URL stays at /services/<id>?edit=<path> — a subpath like
+ * /services/<id>/files/edit is claimed by the service's own Caddy route
+ * (proxied to the app container), so the editor must not live there. */
 function fileEditUrl(serviceId: string, path: string): string {
-  return `/services/${serviceId}/files/edit?path=${encodeURIComponent(path)}`;
+  return `/services/${serviceId}?edit=${encodeURIComponent(path)}`;
 }
 
 async function loadFileEdit(): Promise<void> {
@@ -966,7 +969,7 @@ async function loadFileEdit(): Promise<void> {
 function fileEditView(): string {
   const sid = ui.serviceId as string;
   const s = service(sid);
-  const wantPath = new URLSearchParams(window.location.search).get('path') || '';
+  const wantPath = new URLSearchParams(window.location.search).get('edit') || '';
   const fe = ui.fileEdit as FileEditState | null;
   if (!s) return emptyMissing('Service');
   if (!fe || fe.serviceId !== sid || fe.path !== wantPath) {
