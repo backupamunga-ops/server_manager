@@ -47,6 +47,7 @@ async function request<T>(method: string, path: string, body?: unknown, headers:
 const get = <T,>(path: string) => request<T>('GET', path);
 const post = <T,>(path: string, body?: unknown, headers?: Record<string, string>) =>
   request<T>('POST', path, body, headers);
+const put = <T,>(path: string, body?: unknown) => request<T>('PUT', path, body);
 const del = <T,>(path: string) => request<T>('DELETE', path);
 /** Raw-body PUT with same-origin credentials (multipart-free uploads use this). */
 async function putForm(path: string, form: FormData): Promise<void> {
@@ -112,6 +113,14 @@ export interface DeploymentEvent {
   level: 'info' | 'success' | 'warning' | 'error';
   message: string;
   createdAt: string;
+}
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  size: number;
+  modified: string;
 }
 
 export interface ServiceDetail {
@@ -300,6 +309,48 @@ export const api = {
       post<{ serviceId: string; deploymentId: string }>(`/services/${serviceId}/deployments`),
     rollback: (serviceId: string, deploymentId: string) =>
       post<{ operationId: string }>(`/services/${serviceId}/rollbacks`, { deploymentId }),
+  },
+
+  serviceFiles: {
+    list: (serviceId: string, path = '') =>
+      get<{ path: string; items: FileEntry[] }>(
+        `/services/${serviceId}/files${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+      ),
+    read: (serviceId: string, path: string) =>
+      get<{ path: string; size: number; modified: string; content: string }>(
+        `/services/${serviceId}/files/content?path=${encodeURIComponent(path)}`,
+      ),
+    save: (serviceId: string, path: string, content: string) =>
+      put<{ path: string; size: number }>(`/services/${serviceId}/files/content`, { path, content }),
+    upload: async (serviceId: string, path: string, file: File): Promise<{ path: string; size: number }> => {
+      const res = await fetch(
+        `${BASE}/services/${serviceId}/files/upload?path=${encodeURIComponent(path)}`,
+        { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/octet-stream' }, body: file },
+      );
+      if (!res.ok) {
+        let payload: Record<string, unknown> = {};
+        try { payload = await res.json(); } catch { /* empty body */ }
+        throw new ApiError(res.status, (payload.error ?? payload) as never);
+      }
+      return (await res.json()) as { path: string; size: number };
+    },
+    mkdir: (serviceId: string, path: string) =>
+      post<{ path: string }>(`/services/${serviceId}/files/mkdir`, { path }),
+    remove: (serviceId: string, path: string) =>
+      del<{ removed: string }>(
+        `/services/${serviceId}/files?path=${encodeURIComponent(path)}`,
+      ),
+    extract: (serviceId: string, uploadId: string, path = '') =>
+      post<{ extractedInto: string; entryCount: number }>(`/services/${serviceId}/files/extract`, {
+        uploadId,
+        path,
+      }),
+    redeployZip: (serviceId: string, uploadId: string) =>
+      post<{ serviceId: string; deploymentId: string }>(`/services/${serviceId}/files/redeploy-zip`, {
+        uploadId,
+      }),
+    restart: (serviceId: string) =>
+      post<{ container: string; state: string }>(`/services/${serviceId}/restart`),
   },
 
   uploads: {

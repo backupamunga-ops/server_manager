@@ -16,6 +16,8 @@ async function bootstrap(): Promise<void> {
   // body into a Buffer so the controller's rawBody fallback receives bytes.
   if (typeof (app as NestExpressApplication).useBodyParser === 'function') {
     app.useBodyParser('raw', { limit: '150mb', type: ['application/octet-stream', 'application/zip'] });
+    // File-editor saves arrive as JSON bodies up to ~2 MB.
+    app.useBodyParser('json', { limit: '5mb' });
   }
 
   const config = app.get(ConfigService);

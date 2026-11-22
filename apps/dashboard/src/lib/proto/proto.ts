@@ -143,6 +143,7 @@ let ui: Record<string, unknown> = {
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   confirmTypeValue: '',
   busy: null as string | null,
+  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; openPath: string | null; draft: string; zipMode: string; creating: string | null; error: string | null },
 };
 
 /* Server sync — mutations go through runAction / real endpoints. */
@@ -766,7 +767,7 @@ function serviceView(): string {
   if (s.kind === 'storage') return storageServiceView(s);
   const p = project(s.projectId);
   const app = s.kind === 'application';
-  const tabs = app ? ['overview', 'deployments', 'logs', 'terminal', 'domains', 'variables', 'artifacts', 'volumes', 'settings']
+  const tabs = app ? ['overview', 'deployments', 'logs', 'files', 'terminal', 'domains', 'variables', 'artifacts', 'volumes', 'settings']
     : s.kind === 'database' ? ['overview', 'connections', 'console', 'users', 'backups', 'settings']
     : ['overview', 'executions', 'settings'];
   const sub = s.kind === 'database' ? `${s.engine} · ${s.database}`
@@ -779,6 +780,7 @@ function applicationService(s: ServiceRec): string {
   const ds = deploymentsFor(s.id);
   const d = ds[0];
   if (ui.tab === 'terminal') return terminalView(s);
+  if (ui.tab === 'files') return appFilesView(s);
   if (ui.tab === 'artifacts') return appArtifactsView(s);
   if (ui.tab === 'volumes') return appVolumesView(s);
   if (ui.tab === 'overview')
@@ -794,6 +796,133 @@ function applicationService(s: ServiceRec): string {
   if (ui.tab === 'variables')
     return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Environment variables</h3><p class="muted xs">Values are encrypted at rest and injected into the container runtime.</p></div>${btn(`${ico('plus', 15)} Add variable`, 'openModal', 'btn-primary', `data-modal="variable" data-service="${s.id}"`)}</div><div class="card table-frame"><table class="table"><thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead><tbody>${(s.variables || []).map((v, i) => `<tr><td class="main-cell mono">${esc(v.key)}</td><td class="mono muted">••••••••••••</td><td>${btn(`${ico('trash', 13)} Remove`, 'removeVar', 'btn-small', `data-id="${s.id}" data-index="${i}"`)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No variables yet.</td></tr>'}</tbody></table></div><p class="hint">Changing variables creates a new configuration revision and requires a redeployment.</p>`;
   return `<div class="grid two"><div class="card"><h3 class="section-title">Service configuration</h3><div class="kv"><span class="k">Source</span><span class="v">${esc(cap(s.source))}</span><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${esc(cap(s.role))}</span><span class="k">Created</span><span class="v">${date(s.created)}</span></div></div><div class="card" style="border-color:#e5484d"><div class="row space"><h3 class="section-title">Danger zone</h3></div><p class="muted small">Deleting removes the service, its platform routes, database users and deployment history. This cannot be undone.</p><button class="btn" data-action="deleteServiceAsk" data-id="${s.id}" style="color:#ff8f8f;border-color:#e5484d">Delete service</button></div></div>`;
+}
+
+/* ── Files tab — browse/edit the LIVE deployment of an application ── */
+interface FilesState {
+  path: string;
+  items: { name: string; path: string; type: string; size: number; modified: string }[];
+  loading: boolean;
+  openPath: string | null;
+  draft: string;
+  zipMode: 'file' | 'extract' | 'release';
+  creating: string | null;
+  error: string | null;
+}
+const filesState = (): FilesState => {
+  if (!ui.files) {
+    ui.files = { path: '', items: [], loading: false, openPath: null, draft: '', zipMode: 'extract', creating: null, error: null } as FilesState;
+  }
+  return ui.files as FilesState;
+};
+
+function filesBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function filesBreadcrumb(path: string): string {
+  const segs = String(path || '').split('/').filter(Boolean);
+  const parts = [`<button class="link mono" data-action="filesOpen" data-path="">/</button>`];
+  let acc = '';
+  for (const s of segs) {
+    acc = acc ? `${acc}/${s}` : s;
+    parts.push(`<button class="link mono" data-action="filesOpen" data-path="${attr(acc)}">${esc(s)} /</button>`);
+  }
+  return parts.join(' ');
+}
+
+async function filesLoad(serviceId: string, path: string): Promise<void> {
+  const f = filesState();
+  f.path = path;
+  f.loading = true;
+  render();
+  try {
+    const res = await api.serviceFiles.list(serviceId, path);
+    f.items = res.items;
+    f.error = null;
+  } catch (err) {
+    f.items = [];
+    f.error = err instanceof ApiError ? err.message : 'Could not list files.';
+  }
+  f.loading = false;
+  render();
+}
+
+/** Shared staging for ZIP uploads: init → receive → finalize. */
+async function stageZipToApi(file: File): Promise<{ uploadId: string; detected: string; entryCount: number }> {
+  const init = await api.post<{ uploadId: string }>('/uploads/init', {
+    filename: file.name, size: file.size, mimeType: 'application/zip',
+  });
+  const buf = await file.arrayBuffer();
+  const hash = await sha256Hex(buf);
+  const form = new FormData();
+  form.append('file', new Blob([buf], { type: 'application/zip' }), file.name);
+  await api.putForm(`/uploads/${init.uploadId}/receive?sha256=${encodeURIComponent(hash)}`, form);
+  const fin = await api.post<{ detectedFramework: string; entryCount: number }>(`/uploads/${init.uploadId}/finalize`, { sha256: hash });
+  return { uploadId: init.uploadId, detected: fin.detectedFramework, entryCount: fin.entryCount };
+}
+
+async function filesHandleZip(serviceId: string, file: File): Promise<void> {
+  const f = filesState();
+  const mode = f.zipMode;
+  try {
+    if (mode === 'file') {
+      const res = await api.serviceFiles.upload(serviceId, f.path ? `${f.path}/${file.name}` : file.name, file);
+      flash(`Uploaded ${esc(res.path)} (${filesBytes(res.size)}).`);
+      await filesLoad(serviceId, f.path);
+      return;
+    }
+    flash('Uploading ZIP…');
+    const staged = await stageZipToApi(file);
+    if (mode === 'extract') {
+      const res = await api.serviceFiles.extract(serviceId, staged.uploadId, f.path);
+      flash(`Extracted ${res.entryCount} entries into ${esc(res.extractedInto)} — click Restart app if it caches files at boot.`);
+      await filesLoad(serviceId, f.path);
+    } else {
+      const res = await api.serviceFiles.redeployZip(serviceId, staged.uploadId);
+      activity('Release deploy started', `${service(serviceId)?.name || 'Application'} · ZIP (${staged.detected})`, 'deploy');
+      go('service', null, serviceId, 'deployments');
+      flash(`New release deploying (${staged.detected}, ${staged.entryCount} entries). Watch the deployment logs.`);
+    }
+  } catch (err) {
+    flash(err instanceof ApiError ? err.message : 'The upload failed. Please try again.', true);
+  }
+}
+
+function appFilesView(s: ServiceRec): string {
+  const f = filesState();
+  const editor = f.openPath;
+  const creating = f.creating;
+  const parent = String(f.path || '').split('/').slice(0, -1).join('/');
+  const rows = (f.error ? [] : f.items).map((it) => `<tr>
+    <td class="main-cell">${it.type === 'dir'
+      ? `<button class="link mono" data-action="filesOpen" data-path="${attr(it.path)}">${ico('projects', 14)} ${esc(it.name)}/</button>`
+      : `<span class="mono">${ico('file', 14)} ${esc(it.name)}</span>`}</td>
+    <td class="mono muted">${it.type === 'dir' ? '—' : filesBytes(it.size)}</td>
+    <td class="muted xs">${it.modified && it.modified !== '1970-01-01T00:00:00.000Z' ? date(it.modified) : '—'}</td>
+    <td><div class="row">${it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : ''}${btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}" data-name="${attr(it.name)}"`)}</div></td>
+  </tr>`).join('');
+  return `<div class="row space" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
+    <div><h3 class="section-title">Deployment files</h3><p class="muted xs">Live release of ${esc(s.name)} · edits apply to the running deployment directory</p></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      ${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${s.id}"`)}
+      ${btn(`${ico('plus', 14)} File`, 'filesNew', 'btn-small', `data-kind="file"`)}
+      ${btn(`${ico('projects', 14)} Folder`, 'filesNew', 'btn-small', `data-kind="folder"`)}
+      ${btn(`${ico('upload', 14)} Upload file`, 'filesPick', 'btn-small', `data-mode="file"`)}
+      ${btn(`${ico('storage', 14)} Upload ZIP → extract here`, 'filesPick', 'btn-small', `data-mode="extract"`)}
+      ${btn(`${ico('deployments', 14)} Deploy ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode="release"`)}
+    </div></div>
+    <input type="file" id="filesZipInput" hidden ${f.zipMode === 'release' ? 'accept=".zip"' : ''} />
+    ${creating ? `<div class="card" style="margin-bottom:14px"><form id="filesCreateForm" class="row" style="gap:10px;padding:4px 0"><input id="filesCreateName" class="mono" style="flex:1" maxlength="200" autocomplete="off" spellcheck="false" placeholder="${creating === 'file' ? 'new-file.js' : 'new-folder'}" /><button class="btn btn-primary btn-small" type="submit">Create ${esc(creating)}</button><button class="btn btn-small" type="button" data-action="filesCancelCreate">Cancel</button></form></div>` : ''}
+    <div class="card table-frame"><div class="table-wrap">
+      <div class="row" style="padding:10px 14px;border-bottom:1px solid var(--line);gap:6px;flex-wrap:wrap">${ico('search', 13)} ${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 13)} Up`, 'filesOpen', 'btn-small', `data-path="${attr(parent)}"`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
+      <table class="table"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
+      <tbody>${f.error ? `<tr><td colspan="4" class="muted">${esc(f.error)}</td></tr>` : rows || `<tr><td colspan="4"><div class="empty"><h3>Empty directory</h3><p>Upload a ZIP, add files, or deploy a release.</p></div></td></tr>`}</tbody></table>
+    </div></div>
+    ${editor ? `<div class="card" style="margin-top:16px"><div class="row space" style="flex-wrap:wrap;gap:10px"><div><h3 class="section-title">Editing <span class="mono">${esc(editor)}</span></h3><p class="muted xs">Plain-text editor · saves write through to the live deployment</p></div><div class="row">${btn(`${ico('check', 14)} Save`, 'filesSave', 'btn-primary btn-small', `data-id="${s.id}" data-path="${attr(editor)}"`)}${btn('Close', 'filesCloseEdit', 'btn-small')}</div></div><textarea id="fileEditor" class="sql-editor" style="min-height:340px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px" spellcheck="false">${esc(f.draft)}</textarea><p class="hint">Changes are live on save for static files. Restart the app if it reads files only at boot.</p></div>` : ''}
+    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “Deploy ZIP as release” makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy.</p></div></div>`;
 }
 
 const safePreviewCommands = ['help', 'pwd', 'ls', 'ls -la', 'whoami', 'node --version',
@@ -2011,6 +2140,96 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       }
       break;
     }
+    case 'filesOpen': {
+      const sid = ui.serviceId as string;
+      if (!sid) break;
+      void filesLoad(sid, String(el.dataset.path ?? ''));
+      break;
+    }
+    case 'filesNew': {
+      const f = filesState();
+      f.creating = String(el.dataset.kind ?? 'file');
+      render();
+      const inp = document.getElementById('filesCreateName') as HTMLInputElement | null;
+      if (inp) inp.focus();
+      break;
+    }
+    case 'filesCancelCreate': {
+      filesState().creating = null;
+      render();
+      break;
+    }
+    case 'filesEdit': {
+      const sid = ui.serviceId as string;
+      const f = filesState();
+      try {
+        const res = await api.serviceFiles.read(sid, String(el.dataset.path ?? ''));
+        f.openPath = res.path;
+        f.draft = res.content;
+        render();
+        const ta = document.getElementById('fileEditor') as HTMLTextAreaElement | null;
+        if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Could not open the file.', true);
+      }
+      break;
+    }
+    case 'filesCloseEdit': {
+      const f = filesState();
+      f.openPath = null;
+      f.draft = '';
+      render();
+      break;
+    }
+    case 'filesSave': {
+      const sid = ui.serviceId as string;
+      const f = filesState();
+      const path = String(el.dataset.path ?? f.openPath ?? '');
+      const ta = document.getElementById('fileEditor') as HTMLTextAreaElement | null;
+      const content = ta ? ta.value : f.draft;
+      f.draft = content;
+      try {
+        const res = await api.serviceFiles.save(sid, path, content);
+        flash(`Saved ${esc(path)} (${filesBytes(res.size)}).`);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Could not save the file.', true);
+      }
+      break;
+    }
+    case 'filesDelete': {
+      const sid = ui.serviceId as string;
+      const path = String(el.dataset.path ?? '');
+      const name = String(el.dataset.name ?? path);
+      const ok = await confirmModal(`Delete ${name}? This cannot be undone.`, true);
+      if (!ok) break;
+      try {
+        await api.serviceFiles.remove(sid, path);
+        flash(`Deleted ${esc(name)}.`);
+        await filesLoad(sid, filesState().path);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Could not delete the file.', true);
+      }
+      break;
+    }
+    case 'filesPick': {
+      const f = filesState();
+      f.zipMode = String(el.dataset.mode ?? 'extract') as FilesState['zipMode'];
+      const inp = document.getElementById('filesZipInput') as HTMLInputElement | null;
+      inp?.click();
+      break;
+    }
+    case 'filesRestart': {
+      const sid = String(el.dataset.id ?? ui.serviceId);
+      const ok = await confirmModal('Restart the application container now? Connections drop for a second or two.', false);
+      if (!ok) break;
+      try {
+        const res = await api.serviceFiles.restart(sid);
+        flash(`Restarted ${res.container} (state: ${res.state}).`);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Restart failed.', true);
+      }
+      break;
+    }
     case 'simulatePush': {
       const s = service(id);
       if (!s) return;
@@ -2519,6 +2738,28 @@ async function handleSubmit(e: Event): Promise<void> {
   if (form.id === 'terminalDemoForm') {
     e.preventDefault();
     runDemoCommand((form.elements.namedItem('command') as HTMLInputElement)?.value || '');
+    return;
+  }
+  if (form.id === 'filesCreateForm') {
+    const sid = ui.serviceId as string;
+    const inp = document.getElementById('filesCreateName') as HTMLInputElement | null;
+    const name = (inp?.value || '').trim().replace(/^\/+|\/+$/g, '');
+    const f = filesState();
+    const kind = f.creating;
+    f.creating = null;
+    if (!sid || !name || !kind) { render(); return; }
+    const full = f.path ? `${f.path}/${name}` : name;
+    (async () => {
+      try {
+        if (kind === 'folder') await api.serviceFiles.mkdir(sid, full);
+        else await api.serviceFiles.save(sid, full, '');
+        flash(`Created ${esc(full)}.`);
+        await filesLoad(sid, f.path);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Could not create it.', true);
+        render();
+      }
+    })();
     return;
   }
   if (form.id === 'sqlConsoleForm') {
@@ -3036,6 +3277,18 @@ async function onChange(e: Event): Promise<void> {
       render();
       flash((err as Error).message, true);
     }
+    return;
+  }
+  if (target.id === 'filesZipInput') {
+    const sid = ui.serviceId as string;
+    const file = (target as HTMLInputElement).files?.[0];
+    target.value = '';
+    if (!sid || !file) return;
+    if (!file.name.toLowerCase().endsWith('.zip') && filesState().zipMode !== 'file') {
+      flash('Choose a .zip file.', true);
+      return;
+    }
+    void filesHandleZip(sid, file);
     return;
   }
   if (target.id === 'terminalDemoRole') {

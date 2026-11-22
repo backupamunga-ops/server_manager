@@ -20,6 +20,7 @@ import { MailModule } from './modules/mail/mail.module.js';
 import { ProjectsModule } from './modules/projects/projects.module.js';
 import { SecretsModule } from './modules/secrets/secrets.module.js';
 import { ServicesModule } from './modules/services/services.module.js';
+import { ServiceFilesModule } from './modules/service-files/service-files.module.js';
 import { UploadsModule } from './modules/uploads/uploads.module.js';
 
 @Module({
@@ -46,6 +47,7 @@ import { UploadsModule } from './modules/uploads/uploads.module.js';
     OverviewModule,
     DeploymentsModule,
     UploadsModule,
+    ServiceFilesModule,
     GithubModule,
     AgentModule,
   ],
