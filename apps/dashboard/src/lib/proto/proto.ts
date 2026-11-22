@@ -3198,7 +3198,7 @@ function render(): void {
     databases: () => servicesIndex('database'), cron: () => servicesIndex('cron'),
     domains: domainsView, domainDetail: domainDetailView, email: emailView,
     servers: serversView, activity: activityView, settings: settingsView,
-    storageIndex: storageOverview, docs: docsView,
+    storageIndex: storageOverview, docs: docsView, fileEdit: fileEditView,
   };
   const page = (pageFns[ui.page as string] || overview)();
   const nextHtml =
