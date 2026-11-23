@@ -1170,70 +1170,70 @@ function appFilesView(s: ServiceRec): string {
   const selCount = Object.keys(f.selected).length;
   const rows = (f.error ? [] : listItems).map((it) => {
     const k = filesKind(it.name, it.type === 'dir');
-    const chip = `<span class=”status-icon ${k.color}” style=”width:28px;height:28px;flex:none”>${ico(k.icon, 15)}</span>`;
+    const chip = `<span class="status-icon ${k.color}" style="width:28px;height:28px;flex:none">${ico(k.icon, 15)}</span>`;
     const label = it.type === 'dir' ? `${esc(it.name)}/` : esc(it.name);
     const nameCell = searching
-      ? `<button class=”link” data-action=”filesOpen” data-path=”${attr(it.path)}” data-clear-search=”1”><strong>${label}</strong></button>`
+      ? `<button class="link" data-action="filesOpen" data-path="${attr(it.path)}" data-clear-search="1"><strong>${label}</strong></button>`
       : it.type === 'dir'
-        ? `<button class=”link” data-action=”filesOpen” data-path=”${attr(it.path)}”><strong>${label}</strong></button>`
-        : `<span class=”mono small”>${label}</span>`;
+        ? `<button class="link" data-action="filesOpen" data-path="${attr(it.path)}"><strong>${label}</strong></button>`
+        : `<span class="mono small">${label}</span>`;
     const meta = searching
       ? `${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · ${esc(it.path)}`
-      : `${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · <span title=”${attr(it.modified)}”>${filesWhen(it.modified)}</span>`;
+      : `${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · <span title="${attr(it.modified)}">${filesWhen(it.modified)}</span>`;
     const checked = f.selected[it.path] ? ' checked' : '';
     const actions = [
-      it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path=”${attr(it.path)}” data-id=”${s.id}”`) : '',
-      it.type === 'file' && filesImageExt(it.name) ? btn(`${ico('external', 13)} Preview`, 'filesPreview', 'btn-small', `data-path=”${attr(it.path)}” data-id=”${s.id}”`) : '',
-      it.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path=”${attr(it.path)}”`) : '',
-      btn('Rename', 'filesRenameAsk', 'btn-small', `data-path=”${attr(it.path)}” data-name=”${attr(it.name)}”`),
-      btn(`${ico('copy', 13)} Duplicate`, 'filesDuplicate', 'btn-small', `data-path=”${attr(it.path)}” data-name=”${attr(it.name)}”`),
-      btn('Delete', 'filesDelete', 'btn-small', `data-path=”${attr(it.path)}” data-id=”${s.id}” data-name=”${attr(it.name)}”`),
+      it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : '',
+      it.type === 'file' && filesImageExt(it.name) ? btn(`${ico('external', 13)} Preview`, 'filesPreview', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : '',
+      it.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path="${attr(it.path)}"`) : '',
+      btn('Rename', 'filesRenameAsk', 'btn-small', `data-path="${attr(it.path)}" data-name="${attr(it.name)}"`),
+      btn(`${ico('copy', 13)} Duplicate`, 'filesDuplicate', 'btn-small', `data-path="${attr(it.path)}" data-name="${attr(it.name)}"`),
+      btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}" data-name="${attr(it.name)}"`),
     ].join('');
-    return `<tr data-file-name=”${attr((searching ? it.path : it.name).toLowerCase())}”>
-    <td style=”width:28px”><input type=”checkbox” class=”file-sel” data-path=”${attr(it.path)}”${checked} /></td>
-    <td class=”main-cell”><div class=”row” style=”gap:10px”>${chip}<div><div>${nameCell}</div><div class=”muted xs” style=”margin-top:2px”>${meta}</div></div></div></td>
-    <td style=”width:1%;white-space:nowrap” class=”muted small”>${it.type === 'dir' ? '—' : filesBytes(it.size)}</td>
-    <td style=”width:1%;white-space:nowrap” class=”muted small” title=”${attr(it.modified)}”>${filesWhen(it.modified)}</td>
-    <td style=”width:1%;white-space:nowrap”><div class=”row” style=”gap:6px”>${actions}</div></td>
+    return `<tr data-file-name="${attr((searching ? it.path : it.name).toLowerCase())}">
+    <td style="width:28px"><input type="checkbox" class="file-sel" data-path="${attr(it.path)}"${checked} /></td>
+    <td class="main-cell"><div class="row" style="gap:10px">${chip}<div><div>${nameCell}</div><div class="muted xs" style="margin-top:2px">${meta}</div></div></div></td>
+    <td style="width:1%;white-space:nowrap" class="muted small">${it.type === 'dir' ? '—' : filesBytes(it.size)}</td>
+    <td style="width:1%;white-space:nowrap" class="muted small" title="${attr(it.modified)}">${filesWhen(it.modified)}</td>
+    <td style="width:1%;white-space:nowrap"><div class="row" style="gap:6px">${actions}</div></td>
   </tr>`;
   }).join('');
   const sortBtn = (key: string, label: string): string =>
-    `<button class=”link” data-action=”filesSort” data-key=”${key}” style=”font-weight:600”>${label}${f.sortKey === key ? (f.sortDir === 1 ? ' ↑' : ' ↓') : ''}</button>`;
+    `<button class="link" data-action="filesSort" data-key="${key}" style="font-weight:600">${label}${f.sortKey === key ? (f.sortDir === 1 ? ' ↑' : ' ↓') : ''}</button>`;
   const thead = `<thead><tr>
-      <th style=”width:28px”><input type=”checkbox” id=”filesSelAll” title=”Select all” /></th>
+      <th style="width:28px"><input type="checkbox" id="filesSelAll" title="Select all" /></th>
       <th>${sortBtn('name', 'Name')}</th>
-      <th style=”width:1%;white-space:nowrap”>${sortBtn('size', 'Size')}</th>
-      <th style=”width:1%;white-space:nowrap”>${sortBtn('modified', 'Modified')}</th>
-      <th style=”width:1%;white-space:nowrap;text-align:right;padding-right:16px”>Actions</th>
+      <th style="width:1%;white-space:nowrap">${sortBtn('size', 'Size')}</th>
+      <th style="width:1%;white-space:nowrap">${sortBtn('modified', 'Modified')}</th>
+      <th style="width:1%;white-space:nowrap;text-align:right;padding-right:16px">Actions</th>
     </tr></thead>`;
   const searchBanner = searching
-    ? `<div class=”row space” style=”padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap”><div class=”row” style=”gap:8px;flex-wrap:wrap”>${ico('search', 14)}<span class=”small”>Matches for <strong class=”mono”>${esc(f.search ?? '')}</strong> across the whole release${f.searchTruncated ? ' — results capped, refine the term' : ''}</span></div>${btn('Clear search', 'filesClearSearch', 'btn-small', '')}</div>`
+    ? `<div class="row space" style="padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap"><div class="row" style="gap:8px;flex-wrap:wrap">${ico('search', 14)}<span class="small">Matches for <strong class="mono">${esc(f.search ?? '')}</strong> across the whole release${f.searchTruncated ? ' — results capped, refine the term' : ''}</span></div>${btn('Clear search', 'filesClearSearch', 'btn-small', '')}</div>`
     : '';
   const bulkBar = selCount > 0
-    ? `<div class=”row space” style=”padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel-2, rgba(0,0,0,.03));gap:10px;flex-wrap:wrap”><span class=”small”><strong>${selCount}</strong> selected</span><span class=”row” style=”gap:6px”>${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}${btn('Clear selection', 'filesClearSel', 'btn-small', '')}</span></div>`
+    ? `<div class="row space" style="padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel-2, rgba(0,0,0,.03));gap:10px;flex-wrap:wrap"><span class="small"><strong>${selCount}</strong> selected</span><span class="row" style="gap:6px">${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}${btn('Clear selection', 'filesClearSel', 'btn-small', '')}</span></div>`
     : '';
-  return `<div class=”row space” style=”margin-bottom:16px;flex-wrap:wrap;gap:12px”>
-    <div><h3 class=”section-title”>Deployment files</h3><p class=”muted xs”>Live release of ${esc(s.name)} — browse, rename, duplicate, upload and restart without a redeploy</p></div>
-    <div class=”row” style=”gap:8px;flex-wrap:wrap”>
-      <span class=”row” style=”gap:6px;margin-right:6px”>${ico('plus', 13)}${btn('File', 'filesNew', 'btn-small', `data-kind=”file”`)}${btn('Folder', 'filesNew', 'btn-small', `data-kind=”folder”`)}${btn('Upload file', 'filesPick', 'btn-small', `data-mode=”file”`)}</span>
-      <span class=”row” style=”gap:6px”>${btn(`${ico('storage', 14)} ZIP → extract here`, 'filesPick', 'btn-small', `data-mode=”extract”`)}${btn(`${ico('deployments', 14)} ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode=”release”`)}${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id=”${s.id}”`)}</span>
+  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
+    <div><h3 class="section-title">Deployment files</h3><p class="muted xs">Live release of ${esc(s.name)} — browse, rename, duplicate, upload and restart without a redeploy</p></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <span class="row" style="gap:6px;margin-right:6px">${ico('plus', 13)}${btn('File', 'filesNew', 'btn-small', `data-kind="file"`)}${btn('Folder', 'filesNew', 'btn-small', `data-kind="folder"`)}${btn('Upload file', 'filesPick', 'btn-small', `data-mode="file"`)}</span>
+      <span class="row" style="gap:6px">${btn(`${ico('storage', 14)} ZIP → extract here`, 'filesPick', 'btn-small', `data-mode="extract"`)}${btn(`${ico('deployments', 14)} ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode="release"`)}${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${s.id}"`)}</span>
     </div></div>
-    <input type=”file” id=”filesZipInput” hidden ${f.zipMode === 'release' ? 'accept=”.zip”' : ''} />
-    ${creating ? `<div class=”card” style=”margin-bottom:14px”><form id=”filesCreateForm” class=”row” style=”gap:10px;padding:4px 0”><input id=”filesCreateName” class=”mono” style=”flex:1” maxlength=”200” autocomplete=”off” spellcheck=”false” placeholder=”${creating === 'file' ? 'new-file.js' : 'new-folder'}” /><button class=”btn btn-primary btn-small” type=”submit”>Create ${esc(creating)}</button><button class=”btn btn-small” type=”button” data-action=”filesCancelCreate”>Cancel</button></form></div>` : ''}
-    ${renaming ? `<div class=”card” style=”margin-bottom:14px”><form id=”filesRenameForm” class=”row” style=”gap:10px;padding:4px 0”><span class=”muted small” style=”white-space:nowrap”>Rename <strong class=”mono”>${esc(renaming.name)}</strong> to</span><input id=”filesRenameTarget” class=”mono” style=”flex:1” maxlength=”300” autocomplete=”off” spellcheck=”false” value=”${attr(renaming.name)}” /><button class=”btn btn-primary btn-small” type=”submit”>Rename</button><button class=”btn btn-small” type=”button” data-action=”filesCancelRename”>Cancel</button></form><p class=”muted xs” style=”margin:6px 0 0”>Tip: include a folder in the target (e.g. <span class=”mono”>assets/${esc(renaming.name)}</span>) to move the file there.</p></div>` : ''}
-    <div class=”card” style=”padding:0;overflow:hidden” id=”filesDropCard”>
-      <div class=”row space” style=”padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap”>
-        <div class=”row” style=”gap:6px;flex-wrap:wrap”>${ico('projects', 14)}${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 12)} Up`, 'filesOpen', 'btn-small', `data-path=”${attr(parent)}”`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
-        <form id=”filesGlobalSearchForm” class=”row” style=”gap:6px”><input id=”filesSearch” placeholder=”Filter here · press Search to search everywhere” autocomplete=”off” spellcheck=”false” style=”max-width:280px” value=”${searching ? attr(f.search ?? '') : ''}” />${btn(`${ico('search', 13)} Search`, 'filesSearchGo', 'btn-small', '')}</form>
+    <input type="file" id="filesZipInput" hidden ${f.zipMode === 'release' ? 'accept=".zip"' : ''} />
+    ${creating ? `<div class="card" style="margin-bottom:14px"><form id="filesCreateForm" class="row" style="gap:10px;padding:4px 0"><input id="filesCreateName" class="mono" style="flex:1" maxlength="200" autocomplete="off" spellcheck="false" placeholder="${creating === 'file' ? 'new-file.js' : 'new-folder'}" /><button class="btn btn-primary btn-small" type="submit">Create ${esc(creating)}</button><button class="btn btn-small" type="button" data-action="filesCancelCreate">Cancel</button></form></div>` : ''}
+    ${renaming ? `<div class="card" style="margin-bottom:14px"><form id="filesRenameForm" class="row" style="gap:10px;padding:4px 0"><span class="muted small" style="white-space:nowrap">Rename <strong class="mono">${esc(renaming.name)}</strong> to</span><input id="filesRenameTarget" class="mono" style="flex:1" maxlength="300" autocomplete="off" spellcheck="false" value="${attr(renaming.name)}" /><button class="btn btn-primary btn-small" type="submit">Rename</button><button class="btn btn-small" type="button" data-action="filesCancelRename">Cancel</button></form><p class="muted xs" style="margin:6px 0 0">Tip: include a folder in the target (e.g. <span class="mono">assets/${esc(renaming.name)}</span>) to move the file there.</p></div>` : ''}
+    <div class="card" style="padding:0;overflow:hidden" id="filesDropCard">
+      <div class="row space" style="padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap">
+        <div class="row" style="gap:6px;flex-wrap:wrap">${ico('projects', 14)}${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 12)} Up`, 'filesOpen', 'btn-small', `data-path="${attr(parent)}"`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
+        <form id="filesGlobalSearchForm" class="row" style="gap:6px"><input id="filesSearch" placeholder="Filter here · press Search to search everywhere" autocomplete="off" spellcheck="false" style="max-width:280px" value="${searching ? attr(f.search ?? '') : ''}" />${btn(`${ico('search', 13)} Search`, 'filesSearchGo', 'btn-small', '')}</form>
       </div>
       ${searchBanner}
       ${bulkBar}
-      <div class=”table-wrap”><table class=”table”>
+      <div class="table-wrap"><table class="table">
       ${thead}
-      <tbody>${f.error ? `<tr><td colspan=”5”><div class=”empty”><h3>${esc(f.error)}</h3></div></td></tr>` : rows || `<tr><td colspan=”5”><div class=”empty”><h3>${searching ? 'No matches' : 'Empty directory'}</h3><p>${searching ? 'Try a shorter or different term — search covers every file and folder in the release.' : 'Upload a ZIP, drag files here, add files, or deploy a release.'}</p></div></td></tr>`}</tbody></table></div>
-      <div class=”row” style=”padding:8px 16px;border-top:1px solid var(--line)”><span class=”muted xs”>Drag files anywhere onto this panel to upload them into ${f.path ? `<span class=”mono”>${esc(f.path)}/</span>` : 'the root'}</span></div>
+      <tbody>${f.error ? `<tr><td colspan="5"><div class="empty"><h3>${esc(f.error)}</h3></div></td></tr>` : rows || `<tr><td colspan="5"><div class="empty"><h3>${searching ? 'No matches' : 'Empty directory'}</h3><p>${searching ? 'Try a shorter or different term — search covers every file and folder in the release.' : 'Upload a ZIP, drag files here, add files, or deploy a release.'}</p></div></td></tr>`}</tbody></table></div>
+      <div class="row" style="padding:8px 16px;border-top:1px solid var(--line)"><span class="muted xs">Drag files anywhere onto this panel to upload them into ${f.path ? `<span class="mono">${esc(f.path)}/</span>` : 'the root'}</span></div>
     </div>
-    <div class=”soft-banner” style=”margin-top:16px”>${ico('code', 18)}<div><strong class=”small”>Two ways to change code on this service</strong><p class=”muted xs”><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release” makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>`;
+    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>`;
 }
 
 const safePreviewCommands = ['help', 'pwd', 'ls', 'ls -la', 'whoami', 'node --version',
