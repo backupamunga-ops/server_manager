@@ -150,7 +150,6 @@ let ui: Record<string, unknown> = {
   files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null; loadedFor: string | null; sortSel: string; selected: Record<string, boolean>; renaming: { path: string; name: string } | null; search: string | null; searchItems: { name: string; path: string; type: string; size: number; modified: string }[]; searchTruncated: boolean; view: string; deep: boolean; favs: { p: string; t: string }[]; float: { kind: string; x: number; y: number; path?: string; name?: string; type?: string } | null },
   fileEdit: null as null | { serviceId: string; path: string; loading: boolean; content: string; size: number; modified: string; dirty: boolean; error: string | null },
   filePath: '',
-  pTree: null as null | { projectId: string; open: Record<string, boolean>; items: Record<string, { name: string; path: string; type: string; size: number; modified: string }[]>; loading: Record<string, boolean>; error: Record<string, string>; autoTried: string | null },
 };
 
 /* Server sync — mutations go through runAction / real endpoints. */
@@ -524,15 +523,11 @@ function projectView(): string {
   const p = project(ui.projectId);
   if (!p) return emptyMissing('Project');
   const ss = state.services.filter((s) => s.projectId === p.id);
-  const stored = ss.filter((s) => s.kind === 'storage');
-  const headerPart = `<button class="back" data-action="go" data-page="projects">${ico('back', 15)} All projects</button>${heading('PROJECT / PRODUCTION', p.name, `Created ${date(p.created)} · Default environment: production`, btn(`${ico('plus', 15)} Add service`, 'new', 'btn-primary', `data-project="${p.id}"`))}<div class="soft-banner">${ico('layers', 21)}<div><strong class="small">Production environment</strong><p>Services here share a project and can connect privately when supported.</p></div><div style="margin-left:auto">${badge(`${ss.length} services`, 'blue')}</div></div><div class="tabs project-tabs">${[['services', 'Services'], ['files', 'Files'], ['architecture', 'Architecture'], ['storage', 'Storage'], ['settings', 'Settings']].map(([k, t]) => `<button class="tab ${ui.projectTab === k ? 'active' : ''}" data-action="projectTab" data-tab="${k}">${t}</button>`).join('')}</div>`;
+  const headerPart = `<button class="back" data-action="go" data-page="projects">${ico('back', 15)} All projects</button>${heading('PROJECT / PRODUCTION', p.name, `Created ${date(p.created)} · Default environment: production`, btn(`${ico('plus', 15)} Add service`, 'new', 'btn-primary', `data-project="${p.id}"`))}<div class="soft-banner">${ico('layers', 21)}<div><strong class="small">Production environment</strong><p>Services here share a project and can connect privately when supported.</p></div><div style="margin-left:auto">${badge(`${ss.length} services`, 'blue')}</div></div><div class="tabs project-tabs">${[['services', 'Services'], ['architecture', 'Architecture'], ['settings', 'Settings']].map(([k, t]) => `<button class="tab ${ui.projectTab === k ? 'active' : ''}" data-action="projectTab" data-tab="${k}">${t}</button>`).join('')}</div>`;
   if (ui.projectTab === 'architecture') return headerPart + projectArchitecture(p, ss);
-  if (ui.projectTab === 'files') return headerPart + projectFilesTree(p, ss);
-  if (ui.projectTab === 'storage') return headerPart + storageBanner() +
-    `<div class="row space" style="margin:20px 0 15px"><h2 class="section-title">Object storage</h2>${btn(`${ico('plus', 14)} Add storage`, 'openModal', 'btn-primary', `data-modal="storageCreate" data-project="${p.id}"`)}</div><div class="grid two">${stored.map((s) => `<div class="card"><div class="row space"><span class="status-icon mint">${ico('bucket', 19)}</span>${statusBadge(s.status)}</div><h3 style="margin:15px 0 6px">${esc(s.name)}</h3><p class="muted small">${bucketsFor(s.id).length} private buckets · ${bytesHuman(storageTotal(s.id))}</p><div class="divider"></div>${btn('Manage storage →', 'openService', '', `data-id="${s.id}"`)} ${btn(`${ico('trash', 13)}`, 'deleteStorage', 'btn-small btn-danger', `data-id="${s.id}" aria-label="Delete storage"`)}</div>`).join('') || '<div class="card empty">No object storage in this project yet.</div>'}</div>`;
   if (ui.projectTab === 'settings') return headerPart + projectSettingsView(p, ss);
   return headerPart +
-    `<div class="section-head"><h2 class="section-title">Services</h2>${stored.length ? btn('Browse storage →', 'projectTab', 'btn-small', 'data-tab="storage"') : ''}</div><div class="card table-frame cl-project-services"><div class="table-wrap"><table class="table"><thead><tr><th>Service</th><th>Type</th><th>Status</th><th>Endpoint / connection</th><th>Actions</th></tr></thead><tbody>${ss.map((s) => {
+    `<div class="section-head"><h2 class="section-title">Services</h2></div><div class="card table-frame cl-project-services"><div class="table-wrap"><table class="table"><thead><tr><th>Service</th><th>Type</th><th>Status</th><th>Endpoint / connection</th><th>Actions</th></tr></thead><tbody>${ss.map((s) => {
       const type = s.kind === 'application' ? `${s.framework} · ${cap(s.role)}` : s.kind === 'database' ? s.engine : s.kind === 'storage' ? 'Object Storage' : 'Scheduled HTTP';
       const end = s.kind === 'application' ? primaryDomain(s.id) : s.kind === 'database' ? `${s.database} · internal` : s.kind === 'storage' ? `${bucketsFor(s.id).length} buckets · external provider` : s.schedule;
       return `<tr><td class="clickable-cell" data-action="openService" data-id="${s.id}"><div class="row"><span class="status-icon ${s.kind === 'database' || s.kind === 'storage' ? 'gold' : s.kind === 'cron' ? 'purple' : 'mint'}">${ico(s.kind === 'storage' ? 'bucket' : itemIcon(s), 16)}</span><div><div class="main-cell">${esc(s.name)}</div><div class="sub-cell">production</div></div></div></td><td>${esc(type)}</td><td>${statusBadge(s.status)}</td><td class="mono xs">${esc(end || '—')}</td><td>${btn('Manage', 'openService', 'btn-small', `data-id="${s.id}"`)}</td></tr>`;
@@ -801,7 +796,7 @@ function applicationService(s: ServiceRec): string {
   if (ui.tab === 'domains')
     return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Application domains</h3><p class="muted xs">Choose from verified domains created in the central registry.</p></div>${btn(`${ico('link', 15)} Connect domain`, 'openModal', 'btn-primary', `data-modal="domainAttach" data-service="${s.id}"`)}</div><div class="card table-frame"><div class="table-wrap"><table class="table"><thead><tr><th>Hostname</th><th>Type</th><th>Status</th><th>HTTPS</th><th>Action</th></tr></thead><tbody>${domainsFor(s.id).map((d) => `<tr><td class="mono main-cell">${esc(d.name)}</td><td>${esc(d.type === 'platform' ? 'Default platform URL' : 'Custom domain')}</td><td>${statusBadge(d.status)}</td><td>${d.https ? badge('Enabled', 'ok') : badge('Pending', 'warn')}</td><td>${d.type === 'platform' ? '<span class="muted xs">Always available</span>' : `<div class="row">${btn('Manage', 'openDomain', 'btn-small', `data-id="${state.hostnames.find((h) => h.name === d.name)?.zoneId || ''}"`)}${btn('Detach', 'unassignHostname', 'btn-small', `data-id="${state.hostnames.find((h) => h.name === d.name)?.id || ''}"`)}</div>`}</td></tr>`).join('')}</tbody></table></div></div><div class="soft-banner" style="margin-top:17px">${ico('globe', 18)}<div><strong class="small">Domain management stays centralized</strong><p>Need a new domain, DNS record, or subdomain? Go to <button class="link" data-action="go" data-page="domains">Domains</button> first, then return here to connect it.</p></div></div>`;
   if (ui.tab === 'variables')
-    return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Environment variables</h3><p class="muted xs">Values are encrypted at rest and injected into the container runtime.</p></div>${btn(`${ico('plus', 15)} Add variable`, 'openModal', 'btn-primary', `data-modal="variable" data-service="${s.id}"`)}</div><div class="card table-frame"><table class="table"><thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead><tbody>${(s.variables || []).map((v, i) => `<tr><td class="main-cell mono">${esc(v.key)}</td><td class="mono muted">••••••••••••</td><td>${btn(`${ico('trash', 13)} Remove`, 'removeVar', 'btn-small', `data-id="${s.id}" data-index="${i}"`)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No variables yet.</td></tr>'}</tbody></table></div><p class="hint">Changing variables creates a new configuration revision and requires a redeployment.</p>`;
+    return `<div class="row space" style="margin-bottom:16px"><div><h3 class="section-title">Environment variables</h3><p class="muted xs">Values are encrypted at rest and injected into the container runtime.</p></div><div class="row" style="gap:8px">${btn(`${ico('upload', 15)} Bulk import`, 'openModal', 'btn', `data-modal="variableBulk" data-service="${s.id}"`)}${btn(`${ico('plus', 15)} Add variable`, 'openModal', 'btn-primary', `data-modal="variable" data-service="${s.id}"`)}</div></div><div class="card table-frame"><table class="table"><thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead><tbody>${(s.variables || []).map((v, i) => `<tr><td class="main-cell mono">${esc(v.key)}</td><td class="mono muted">••••••••••••</td><td>${btn(`${ico('trash', 13)} Remove`, 'removeVar', 'btn-small', `data-id="${s.id}" data-index="${i}"`)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No variables yet.</td></tr>'}</tbody></table></div><p class="hint">Changing variables creates a new configuration revision and requires a redeployment.</p>`;
   return `<div class="grid two"><div class="card"><h3 class="section-title">Service configuration</h3><div class="kv"><span class="k">Source</span><span class="v">${esc(cap(s.source))}</span><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${esc(cap(s.role))}</span><span class="k">Created</span><span class="v">${date(s.created)}</span></div></div><div class="card" style="border-color:#e5484d"><div class="row space"><h3 class="section-title">Danger zone</h3></div><p class="muted small">Deleting removes the service, its platform routes, database users and deployment history. This cannot be undone.</p><button class="btn" data-action="deleteServiceAsk" data-id="${s.id}" style="color:#ff8f8f;border-color:#e5484d">Delete service</button></div></div>`;
 }
 
@@ -825,13 +820,14 @@ interface FilesState {
   deep: boolean;
   favs: { p: string; t: string }[];
   float: { kind: 'new' | 'row' | 'more'; x: number; y: number; path?: string; name?: string; type?: string } | null;
+  retryKey: string | null;
 }
 const filesState = (): FilesState => {
   if (!ui.files) {
     ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null, loadedFor: null,
       sortSel: 'name', selected: {}, renaming: null, search: null, searchItems: [], searchTruncated: false,
       view: (localStorage.getItem('drevanta.fm.view') as FilesState['view']) || 'list', deep: false,
-      favs: [], float: null } as FilesState;
+      favs: [], float: null, retryKey: null } as FilesState;
   }
   return ui.files as FilesState;
 };
@@ -918,6 +914,7 @@ async function filesLoad(serviceId: string, path: string): Promise<void> {
   const f = filesState();
   f.path = path;
   f.loadedFor = `${serviceId}|${path}`; // set before the first render so the view doesn't re-trigger
+  f.retryKey = f.loadedFor; // one auto-retry per key — empty/error views self-heal without loops
   f.loading = true;
   f.selected = {}; // selection never survives a directory change
   render();
@@ -970,107 +967,6 @@ function filesSorted(items: FmItem[]): FmItem[] {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
-}
-
-/* ── Project-level file tree — one root per application service ──
- * A project bundles several independently deployed services (frontend,
- * backend, …). The tree shows each service as a root named after the
- * service; expanding a root lazily fetches its live deployment listing. */
-type PTreeItem = { name: string; path: string; type: string; size: number; modified: string };
-const pTreeKey = (sid: string, path: string) => `${sid}|${path || ''}`;
-const pTreeState = () => {
-  if (!ui.pTree) {
-    ui.pTree = { projectId: '', open: {}, items: {}, loading: {}, error: {}, autoTried: null };
-  }
-  return ui.pTree as { projectId: string; open: Record<string, boolean>; items: Record<string, PTreeItem[]>; loading: Record<string, boolean>; error: Record<string, string>; autoTried: string | null };
-};
-
-async function pTreeLoad(sid: string, path: string): Promise<void> {
-  const t = pTreeState();
-  const key = pTreeKey(sid, path);
-  t.loading[key] = true;
-  render();
-  try {
-    const res = await api.serviceFiles.list(sid, path);
-    t.items[key] = res.items;
-    delete t.error[key];
-  } catch (err) {
-    t.error[key] = err instanceof ApiError ? err.message : 'Could not list this deployment.';
-  }
-  t.loading[key] = false;
-  render();
-}
-
-function pTreeKids(sid: string, depth: number, items: PTreeItem[]): string {
-  const t = pTreeState();
-  const sorted = [...items].sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
-  return `<div class="ptree-kids">${sorted.map((it) => {
-    const pad = `style="padding-left:${depth * 22 + 12}px"`;
-    if (it.type === 'dir') {
-      const key = pTreeKey(sid, it.path);
-      const open = !!t.open[key];
-      const kids = open ? (t.items[key] ? pTreeKids(sid, depth + 1, t.items[key]) : '') : '';
-      return `<div><div class="ptree-row" ${pad}>
-        <button class="ptree-twist ${open ? 'open' : ''}" data-action="ptreeToggle" data-sid="${sid}" data-path="${attr(it.path)}" aria-expanded="${open}" aria-label="Toggle ${esc(it.name)}">${ico('chevron', 13)}</button>
-        <span class="status-icon gold" style="width:24px;height:24px">${ico('projects', 13)}</span>
-        <button class="link mono ptree-name" data-action="ptreeToggle" data-sid="${sid}" data-path="${attr(it.path)}">${esc(it.name)}/</button>
-        ${t.loading[key] ? badge('Loading…', 'blue') : ''}
-      </div>${kids}</div>`;
-    }
-    const k = filesKind(it.name, false);
-    return `<div class="ptree-row" ${pad}>
-      <span class="ptree-twist leaf">${ico('file', 13)}</span>
-      <span class="status-icon ${k.color}" style="width:24px;height:24px">${ico(k.icon, 13)}</span>
-      <span class="mono ptree-name">${esc(it.name)}</span>
-      <span class="muted xs">${filesBytes(it.size)}</span>
-      <span class="ptree-tools">${btn('Edit', 'filesEdit', 'btn-small', `data-id="${sid}" data-path="${attr(it.path)}"`)}${btn('Download', 'fileEditDownload', 'btn-small', `data-id="${sid}" data-path="${attr(it.path)}"`)}</span>
-    </div>`;
-  }).join('')}</div>`;
-}
-
-function pTreeRoot(s: ServiceRec): string {
-  const t = pTreeState();
-  const key = pTreeKey(s.id, '');
-  const open = !!t.open[key];
-  const status = !s.activeDeployment
-    ? badge('No live deployment', 'warn')
-    : t.loading[key] ? badge('Loading…', 'blue')
-    : t.error[key] ? badge(t.error[key], 'warn')
-    : badge('Live', 'ok');
-  const kids = open && t.items[key] ? pTreeKids(s.id, 1, t.items[key]) : '';
-  const err = open && t.error[key] ? `<div class="ptree-empty">${esc(t.error[key])}</div>` : '';
-  return `<div class="ptree-root"><div class="ptree-row ptree-service">
-    <button class="ptree-twist ${open ? 'open' : ''}" data-action="ptreeToggle" data-sid="${s.id}" data-path="" aria-expanded="${open}" aria-label="Toggle ${esc(s.name)}">${ico('chevron', 14)}</button>
-    <span class="status-icon mint" style="width:28px;height:28px">${ico('code', 15)}</span>
-    <button class="link mono ptree-name" data-action="ptreeToggle" data-sid="${s.id}" data-path=""><strong>${esc(s.name)}/</strong></button>
-    <span class="ptree-meta">${status}</span>
-    <span class="ptree-tools">${btn('Open manager', 'openService', 'btn-small', `data-id="${s.id}"`)}</span>
-  </div>${err}${kids}</div>`;
-}
-
-function projectFilesTree(p: ProjectRec, ss: ServiceRec[]): string {
-  const t = pTreeState();
-  if (t.projectId !== p.id) {
-    t.projectId = p.id; t.open = {}; t.items = {}; t.loading = {}; t.error = {}; t.autoTried = null;
-  }
-  const apps = ss.filter((s) => s.kind === 'application');
-  const nonApp = ss.filter((s) => s.kind !== 'application');
-  if (t.autoTried !== p.id) {
-    // Auto-expand every live service root once: the depth-1 listing IS the
-    // "which service holds what" overview this tab exists for.
-    t.autoTried = p.id;
-    for (const s of apps) {
-      if (!s.activeDeployment) continue;
-      const key = pTreeKey(s.id, '');
-      if (!t.items[key] && !t.loading[key]) { t.open[key] = true; void pTreeLoad(s.id, ''); }
-    }
-  }
-  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
-    <div><h3 class="section-title">Project file tree</h3><p class="muted xs">One root per application service, named after the service — frontend and backend stay clearly separated</p></div>
-  </div>
-  <div class="ptree">${apps.map((s) => pTreeRoot(s)).join('') || `<div class="card empty"><h3>No application services yet</h3><p>File roots appear here once the project has an application with a live deployment.</p></div>`}</div>
-  ${nonApp.length ? `<div class="soft-banner" style="margin-top:16px">${ico('database', 18)}<div><strong class="small">Databases, storage and cron jobs have no file roots</strong><p class="muted xs">${nonApp.length} non-application ${nonApp.length === 1 ? 'service lives' : 'services live'} in this project (${nonApp.map((s) => esc(s.name)).join(', ')}). Their data is managed through the database console, object storage and cron pages.</p></div></div>` : ''}
-  <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Each root is an independently deployed unit</strong><p class="muted xs">Expanding a root browses that service's live deployment. Uploads, ZIP deploys, restarts and deletes live in each service's Files manager — use “Open manager" on the root row.</p></div></div>`;
 }
 
 /** Shared staging for ZIP uploads: init → receive → finalize. */
@@ -1203,8 +1099,14 @@ function appFilesView(s: ServiceRec): string {
   // service AND path: switching services must refetch, otherwise the previous
   // service's cached listing renders under this one. Search mode skips the
   // auto-load — its results are already in state.
+  // Self-heal: if a previous fetch for THIS key failed or came back empty, the
+  // view would otherwise stay empty forever (loadedFor matches, nothing
+  // refetches until a full page reload). retryKey allows ONE automatic reload
+  // per key when the view is empty or in error — genuine empty folders pay a
+  // single extra request per visit, failures recover without user action.
   filesLoadFavs(s.id);
-  if (f.search === null && f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
+  const dirKey = `${s.id}|${f.path}`;
+  if (f.search === null && !f.loading && (f.loadedFor !== dirKey || ((f.items.length === 0 || f.error) && f.retryKey !== dirKey))) void filesLoad(s.id, f.path);
   const searching = f.search !== null;
   const creating = f.creating;
   const renaming = f.renaming;
@@ -1226,7 +1128,9 @@ function appFilesView(s: ServiceRec): string {
   const selBox = (it: FmItem): string =>
     `<input type="checkbox" class="file-sel" data-path="${attr(it.path)}"${f.selected[it.path] ? ' checked' : ''} aria-label="Select ${attr(it.name)}" />`;
 
-  const emptyState = `<div class="dfm-empty"><div class="big">&#9636;</div><strong>${searching ? 'No matching files' : 'Nothing here yet'}</strong><span>${searching ? 'Try a shorter term - deep search covers every folder in the release.' : 'Create a folder or upload files to get started.'}</span></div>`;
+  const emptyState = f.loading
+    ? `<div class="dfm-empty"><div class="big">&#9636;</div><strong>Loading this folder…</strong><span>Reading the live release.</span></div>`
+    : `<div class="dfm-empty"><div class="big">&#9636;</div><strong>${searching ? 'No matching files' : 'Nothing here yet'}</strong><span>${searching ? 'Try a shorter term - deep search covers every folder in the release.' : 'Create a folder or upload files to get started.'}</span></div>`;
 
   const gridHtml = `<div class="dfm-grid">${listItems.map((it) =>
     `<div class="dfm-card ${f.selected[it.path] ? 'selected' : ''}" data-action="filesSelectCard" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" role="button" tabindex="0" ondblclick="window.__dfmDbl && window.__dfmDbl(this)" data-dfm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">${selBox(it)}<span class="dfm-carddots">${dotsBtn(it)}</span>${fileChip(it, 17)}<div class="name" title="${attr(it.path)}">${esc(it.name)}</div><div class="meta">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)}</div></div>`).join('')}</div>`;
@@ -1285,7 +1189,7 @@ function appFilesView(s: ServiceRec): string {
     <div class="card dfm-panel" id="filesDropCard">
       <div class="dfm-panel-head">
         <div class="dfm-panel-head-left">
-          <form id="filesGlobalSearchForm" class="dfm-searchrow"><label class="dfm-search"><span class="dfm-search-ico">${ico('search', 14)}</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="iconbtn ${f.deep ? 'deepon' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">&#8943;</button></form>
+          <form id="filesGlobalSearchForm" class="dfm-searchrow"><label class="dfm-search"><span class="dfm-search-ico">${ico('search', 14)}</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="dfm-deeptoggle ${f.deep ? 'on' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">Deep</button></form>
         </div>
         <div class="dfm-panel-head-right">
           <select id="filesSortSel" class="dfm-sortsel" aria-label="Sort by">
@@ -1686,11 +1590,39 @@ function confirmModalView(): string {
   return `<div class="modal-wrap" data-action="confirmAnswer"><div class="modal" data-confirm-card="1" style="max-width:460px" role="dialog" aria-modal="true" aria-label="Confirm"><div class="modal-head"><div><h2>${cb.danger ? 'Remove this?' : 'Please confirm'}</h2><p>${esc(cb.message)}</p></div><button class="icon-btn" data-action="confirmAnswer" data-value="0" aria-label="Close dialog">${ico('close', 18)}</button></div>${typed}<div class="modal-footer"><button class="btn" data-action="confirmAnswer" data-value="0">Cancel</button><button class="btn ${cb.danger ? 'btn-danger' : 'btn-primary'}" data-action="confirmAnswer" data-value="1" ${cb.typedName && (ui.confirmTypeValue || '').trim() !== cb.typedName ? 'disabled' : ''}>${cb.typedName ? 'Delete permanently' : 'Confirm'}</button></div></div></div>`;
 }
 
+/* ── .env text parsing for the variables bulk import ──
+ * Accepts KEY=VALUE (and KEY: VALUE), ignores blank lines and #comments,
+ * strips an optional `export ` prefix and one pair of surrounding quotes.
+ * Duplicate keys within the text: the LAST occurrence wins. */
+function parseEnvText(text: string): { key: string; value: string }[] {
+  const seen = new Map<string, string>();
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = line.replace(/^export\s+/, '').match(/^([A-Za-z_][A-Za-z0-9_]*)\s*[=:]\s*(.*)$/);
+    if (!m) continue;
+    let val = m[2].trim();
+    if (val.length >= 2 && ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))) val = val.slice(1, -1);
+    seen.set(m[1], val);
+  }
+  return Array.from(seen, ([key, value]) => ({ key, value }));
+}
+// Test hook for the jsdom smoke suite.
+(window as unknown as { __dfmParseEnv?: typeof parseEnvText }).__dfmParseEnv = parseEnvText;
+
+function updateVarBulkCount(): void {
+  const el = document.getElementById('varBulkCount');
+  const ta = document.getElementById('varBulkText') as HTMLTextAreaElement | null;
+  if (!el || !ta) return;
+  const n = parseEnvText(ta.value).length;
+  el.textContent = n ? `${n} variable${n === 1 ? '' : 's'} will be imported.` : 'Paste KEY=VALUE lines — comments (#) and blank lines are ignored.';
+}
+
 /* ── modals — verbatim from the prototype (final merged layer) ── */
 
 function openModal(type: string, extra: Record<string, unknown> = {}): void {
   const allowed = ['new', 'project', 'deploy', 'database', 'cron', 'domainAttach', 'domainRegister',
-    'subdomain', 'dnsRecord', 'verifyZone', 'mailbox', 'mailAlias', 'demoInbox', 'variable',
+    'subdomain', 'dnsRecord', 'verifyZone', 'mailbox', 'mailAlias', 'demoInbox', 'variable', 'variableBulk',
     'dbAccess', 'reset', 'dns', 'dbAdmin', 'dbUserAdd', 'dbUserManage', 'dbUserPrivileges',
     'apiKeyCreate', 'storageCreate', 'bucketCreate', 'storageFolder', 'objectUpload',
     'storageGrant', 'volumeCreate', 'storageInspect', 'dnsModeChange'];
@@ -1859,6 +1791,11 @@ function modalView(): string {
     const s = service((ui.modalData.serviceId as string) || (ui.serviceId as string));
     html =
       `<form id="variableForm"><p class="muted small">${esc(s?.name || 'Service')}</p><div class="form-row"><label class="form-label" for="varKey">Variable name</label><input id="varKey" name="key" required pattern="[a-zA-Z_][a-zA-Z0-9_]*" placeholder="DATABASE_URL" /></div><div class="form-row"><label class="form-label" for="varValue">Value</label><input id="varValue" name="value" required type="password" placeholder="••••••••••••" autocomplete="new-password" /></div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Cancel', 'closeModal')}<button type="submit" class="btn btn-primary">Save variable</button></div></form>`;
+  }
+  if (type === 'variableBulk') {
+    const s = service((ui.modalData.serviceId as string) || (ui.serviceId as string));
+    html =
+      `<form id="variableBulkForm"><p class="muted small">${esc(s?.name || 'Service')} · bulk import</p><div class="form-row"><label class="form-label" for="varBulkText">Paste variables (KEY=VALUE, one per line)</label><textarea id="varBulkText" name="text" rows="7" spellcheck="false" autocomplete="off" placeholder="DATABASE_URL=postgres://user:pass@host:5432/db&#10;API_KEY=sk-live-…&#10;LOG_LEVEL=info"></textarea></div><div class="form-row"><label class="form-label" for="varBulkFile">Or upload a .env file</label><input id="varBulkFile" type="file" accept=".env,.txt,text/plain" /><p class="hint">The file's contents are appended to the text above — edit anything before importing.</p></div><p class="hint" id="varBulkCount">Paste KEY=VALUE lines — comments (#) and blank lines are ignored.</p><div class="notice">Keys that already exist on this service are skipped (remove them first if you want to replace). Values with surrounding quotes are unwrapped; <span class="mono">export KEY=VALUE</span> is supported.</div><div class="modal-footer" style="margin:20px -24px -24px">${btn('Cancel', 'closeModal')}<button type="submit" class="btn btn-primary">${ico('upload', 14)} Import variables</button></div></form>`;
   }
   if (type === 'dbAccess') {
     const s = service(ui.modalData.serviceId as string);
@@ -2299,18 +2236,6 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       if (ui.termSession) endTerminalSession('Navigated away from previous container.');
       go('project', id);
       break;
-    case 'ptreeToggle': {
-      const t = pTreeState();
-      const sid = String(el.dataset.sid ?? '');
-      const path = String(el.dataset.path ?? '');
-      if (!sid) break;
-      const key = pTreeKey(sid, path);
-      if (t.open[key]) { t.open[key] = false; render(); break; }
-      t.open[key] = true;
-      if (!t.items[key] && !t.loading[key]) void pTreeLoad(sid, path);
-      else render();
-      break;
-    }
     case 'openService': {
       if (ui.termSession) endTerminalSession('Navigated away from previous container.');
       const target = service(id);
@@ -2319,8 +2244,14 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         ui.storagePrefix = '';
         ui.storageSearch = '';
       }
-      // File-manager state never leaks across services.
+      // File-manager state never leaks across services. Resetting the directory
+      // + loadedFor too: otherwise a stale path/listing (or a poisoned empty
+      // listing from an earlier failed fetch) renders for the new service.
       const f = filesState();
+      f.path = '';
+      f.items = [];
+      f.loadedFor = null;
+      f.retryKey = null;
       f.search = null;
       f.searchItems = [];
       f.searchTruncated = false;
@@ -3111,8 +3042,10 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       break;
     }
     case 'projectTab':
-      if (el.dataset.tab === 'storage') { ui.projectTab = 'storage'; render(); return; }
-      ui.projectTab = el.dataset.tab;
+      // Files and Storage tabs were removed from the project workspace —
+      // files live in each service's Files manager, storage keeps its own
+      // index page. Unknown tabs fall back to Services.
+      ui.projectTab = ['architecture', 'settings'].includes(String(el.dataset.tab)) ? String(el.dataset.tab) : 'services';
       render();
       break;
     case 'settingsTab':
@@ -3513,6 +3446,30 @@ async function handleSubmit(e: Event): Promise<void> {
         flash('Variable saved.');
         render();
       }
+      break;
+    }
+    case 'variableBulkForm': {
+      const s = service((ui.modalData.serviceId as string) || (ui.serviceId as string));
+      if (!s) { flash('Service not found.', true); return; }
+      let text = String(data.text ?? '');
+      const fileEl = document.getElementById('varBulkFile') as HTMLInputElement | null;
+      const file = fileEl?.files?.[0];
+      if (file) text = `${text}\n${await file.text()}`;
+      const pairs = parseEnvText(text);
+      if (!pairs.length) { flash('Nothing to import — paste KEY=VALUE lines or choose a .env file first.', true); return; }
+      const existing = new Set((s.variables || []).map((v) => v.key));
+      let added = 0;
+      const skipped: string[] = [];
+      for (const p of pairs) {
+        if (existing.has(p.key)) { skipped.push(p.key); continue; }
+        // Same server action the single-variable form uses — one request per key.
+        if (!(await apply('addVar', { serviceId: s.id, key: p.key, value: p.value }))) break; // apply() already flashed the error
+        existing.add(p.key);
+        added++;
+      }
+      ui.modal = null;
+      flash(`Imported ${added} variable${added === 1 ? '' : 's'}.${skipped.length ? ` Skipped ${skipped.length} already defined: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? '…' : ''}.` : ''}`);
+      render();
       break;
     }
     case 'accessForm':
@@ -4142,6 +4099,20 @@ export function mountApp(): () => void {
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('change', onChange);
   document.addEventListener('input', onInput);
+  // Variables bulk-import modal: live parse count + append chosen .env file into the textarea.
+  document.addEventListener('input', (e) => { if ((e.target as HTMLElement)?.id === 'varBulkText') updateVarBulkCount(); });
+  document.addEventListener('change', (e) => {
+    const t = e.target as HTMLInputElement;
+    if (t?.id !== 'varBulkFile') return;
+    const f0 = t.files?.[0];
+    if (!f0) return;
+    void f0.text().then((txt) => {
+      const ta = document.getElementById('varBulkText') as HTMLTextAreaElement | null;
+      if (!ta) return;
+      ta.value = ta.value ? `${ta.value}\n${txt}` : txt;
+      updateVarBulkCount();
+    });
+  });
   document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('[data-dd]')) closeDropdowns(); }, true);
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('dragleave', onDragLeave);
