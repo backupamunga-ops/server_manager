@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Post,
   Put,
@@ -58,52 +59,6 @@ class RedeployZipDto {
   uploadId!: string;
 }
 
-class RenameDto {
-  @IsString()
-  @MaxLength(512)
-  from!: string;
-
-  @IsString()
-  @MaxLength(512)
-  to!: string;
-}
-
-class CopyDto {
-  @IsString()
-  @MaxLength(512)
-  from!: string;
-
-  @IsString()
-  @MaxLength(512)
-  to!: string;
-}
-
-/** Content types for inline preview of the raw route. */
-const INLINE_TYPES: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.bmp': 'image/bmp',
-  '.avif': 'image/avif',
-  '.txt': 'text/plain; charset=utf-8',
-  '.log': 'text/plain; charset=utf-8',
-  '.json': 'application/json',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.xml': 'application/xml',
-  '.pdf': 'application/pdf',
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-};
-
 /** File manager for the LIVE deployment of an application service. */
 @ApiTags('services')
 @Controller('services/:serviceId/files')
@@ -125,12 +80,24 @@ export class ServiceFilesController {
     return await this.files.list(user.userId, serviceId, path ?? '');
   }
 
-  @Get('usage')
-  async usage(
+  @Post('rename')
+  @HttpCode(200)
+  async rename(
     @Param('serviceId') serviceId: string,
+    @Body() body: { from?: string; to?: string },
     @CurrentUser() user: { userId: string },
   ) {
-    return await this.files.usage(user.userId, serviceId);
+    return await this.files.rename(user.userId, serviceId, String(body.from ?? ''), String(body.to ?? ''));
+  }
+
+  @Post('copy')
+  @HttpCode(200)
+  async copy(
+    @Param('serviceId') serviceId: string,
+    @Body() body: { from?: string; to?: string },
+    @CurrentUser() user: { userId: string },
+  ) {
+    return await this.files.copy(user.userId, serviceId, String(body.from ?? ''), String(body.to ?? ''));
   }
 
   @Get('content')
@@ -142,7 +109,7 @@ export class ServiceFilesController {
     return await this.files.readContent(user.userId, serviceId, path ?? '');
   }
 
-  /** Raw download/preview — session-authed; disp=inline previews in the browser. */
+  /** Raw download — any file type; disp=inline previews in the browser. */
   @Get('raw')
   async raw(
     @Param('serviceId') serviceId: string,
@@ -153,19 +120,24 @@ export class ServiceFilesController {
   ): Promise<void> {
     const { data } = await this.files.readRaw(user.userId, serviceId, path ?? '');
     const name = basename(String(path ?? 'download')).replace(/["\\\r\n]/g, '') || 'download';
-    const inline = String(disp ?? '') === 'inline';
-    const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
-    const type = INLINE_TYPES[ext];
-    if (inline && !type) {
-      // Unknown extension — fall back to a safe download.
+    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
+    const inlineMime: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+      '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon', '.avif': 'image/avif',
+      '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown', '.css': 'text/css',
+      '.html': 'text/html', '.htm': 'text/html', '.json': 'application/json',
+      '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.mp4': 'video/mp4', '.webm': 'video/webm',
+    };
+    if (disp === 'inline') {
+      const mime = inlineMime[ext] ?? 'application/octet-stream';
+      res.setHeader('Content-Type', `${mime}; charset=utf-8`);
+      res.setHeader('Content-Disposition', `inline; filename="${name}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    } else {
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
-    } else {
-      res.setHeader('Content-Type', inline && type ? type : 'application/octet-stream');
-      res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${name}"`);
     }
     res.setHeader('Content-Length', String(data.length));
-    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.end(data);
   }
 
@@ -221,26 +193,6 @@ export class ServiceFilesController {
     @CurrentUser() user: { userId: string },
   ) {
     return await this.files.extract(user.userId, serviceId, body.uploadId, body.path ?? '');
-  }
-
-  @Post('rename')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async rename(
-    @Param('serviceId') serviceId: string,
-    @Body() body: RenameDto,
-    @CurrentUser() user: { userId: string },
-  ) {
-    return await this.files.rename(user.userId, serviceId, body.from, body.to);
-  }
-
-  @Post('copy')
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async copy(
-    @Param('serviceId') serviceId: string,
-    @Body() body: CopyDto,
-    @CurrentUser() user: { userId: string },
-  ) {
-    return await this.files.copy(user.userId, serviceId, body.from, body.to);
   }
 
   @Post('redeploy-zip')

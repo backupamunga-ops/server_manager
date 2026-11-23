@@ -322,6 +322,10 @@ export const api = {
               : ''
         }`,
       ),
+    rename: (serviceId: string, from: string, to: string) =>
+      post<{ from: string; to: string }>(`/services/${serviceId}/files/rename`, { from, to }),
+    copy: (serviceId: string, from: string, to: string) =>
+      post<{ from: string; to: string }>(`/services/${serviceId}/files/copy`, { from, to }),
     read: (serviceId: string, path: string) =>
       get<{ path: string; size: number; modified: string; content: string }>(
         `/services/${serviceId}/files/content?path=${encodeURIComponent(path)}`,
@@ -357,14 +361,6 @@ export const api = {
       }),
     restart: (serviceId: string) =>
       post<{ container: string; state: string }>(`/services/${serviceId}/restart`),
-    rename: (serviceId: string, from: string, to: string) =>
-      post<{ from: string; to: string }>(`/services/${serviceId}/files/rename`, { from, to }),
-    copy: (serviceId: string, from: string, to: string) =>
-      post<{ from: string; to: string }>(`/services/${serviceId}/files/copy`, { from, to }),
-    usage: (serviceId: string) =>
-      get<{ bytes: number; files: number; dirs: number; recent: FileEntry[] }>(
-        `/services/${serviceId}/files/usage`,
-      ),
   },
 
   uploads: {

@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { execFile } from 'node:child_process';
-import { cp as fsCp, mkdir, readdir, readFile, rename as fsRename, rm, stat, lstat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile, rm, stat, lstat } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { PrismaService } from '../../common/prisma.service.js';
 import { extractZipSafe } from '../../common/zip.js';
@@ -12,11 +12,9 @@ const DEPLOYMENTS_DIR = '/var/lib/cloudlane/deployments';
 const MAX_READ_BYTES = 512 * 1024; // 512 KB per file read
 const MAX_WRITE_BYTES = 2 * 1024 * 1024; // 2 MB per file write (text editor)
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB per raw file upload
-const MAX_COPY_BYTES = 200 * 1024 * 1024; // 200 MB total per copy operation
-const MAX_COPY_FILES = 5_000; // per copy operation
-const MAX_COPY_DEPTH = 12;
-const MAX_SEARCH_RESULTS = 100;
-const MAX_SEARCH_SCANNED = 20_000; // entries walked per search
+const MAX_SEARCH_SCANNED = 20000; // entries a deep search may visit
+const MAX_SEARCH_RESULTS = 500; // matches returned per deep search
+const MAX_COPY_DEPTH = 24; // recursion guard for copy/move across dirs
 
 export interface FileEntry {
   name: string;
@@ -135,6 +133,152 @@ export class ServiceFilesService {
       a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1,
     );
     return { path: relPath ?? '', items };
+  }
+
+  /**
+   * Deep search: substring match on names across the WHOLE deployment tree.
+   * Caps bound the work so a huge release cannot stall the request; symlinks
+   * are skipped (no escape from the release root), .well-known ignored.
+   */
+  async search(userId: string, serviceId: string, query: string): Promise<{ query: string; items: FileEntry[]; truncated: boolean }> {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return { query: '', items: [], truncated: false };
+    const { root } = await this.activeRoot(userId, serviceId);
+    const items: FileEntry[] = [];
+    let truncated = false;
+    let scanned = 0;
+    const walk = async (dir: string, rel: string, depth: number): Promise<void> => {
+      if (truncated || scanned >= MAX_SEARCH_SCANNED || depth > MAX_COPY_DEPTH) return;
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (truncated || scanned >= MAX_SEARCH_SCANNED) {
+          truncated = truncated || scanned >= MAX_SEARCH_SCANNED;
+          return;
+        }
+        scanned += 1;
+        if (e.isSymbolicLink()) continue;
+        if (e.name === '.well-known' && rel === '') continue;
+        const childRel = rel ? `${rel}/${e.name}` : e.name;
+        const isDir = e.isDirectory();
+        if (e.name.toLowerCase().includes(needle)) {
+          const full = join(dir, e.name);
+          let size = 0;
+          let modified = new Date(0);
+          try {
+            const st = await stat(full);
+            size = st.size;
+            modified = st.mtime;
+          } catch { /* raced — list it anyway */ }
+          items.push({ name: e.name, path: childRel, type: isDir ? 'dir' : 'file', size, modified: modified.toISOString() });
+          if (items.length >= MAX_SEARCH_RESULTS) {
+            truncated = true;
+            return;
+          }
+        }
+        if (isDir) await walk(join(dir, e.name), childRel, depth + 1);
+      }
+    };
+    await walk(root, '', 0);
+    return { query: needle, items, truncated };
+  }
+
+  /** Rename or move (to includes a directory path) within the release root. */
+  async rename(userId: string, serviceId: string, fromPath: string, toPath: string): Promise<{ from: string; to: string }> {
+    const meta = await this.activeRoot(userId, serviceId);
+    const root = meta.root;
+    const clean = (p: string): string => {
+      const trimmed = String(p ?? '').replace(/^\/+|\/+$/g, '');
+      if (!trimmed || trimmed.includes('..') || trimmed.includes('\\') || trimmed.split('/').some((s) => !s || s === '.')) {
+        throw new BadRequestException({ code: 'BAD_PATH', message: 'Invalid path.' });
+      }
+      return trimmed;
+    };
+    const from = clean(fromPath);
+    const to = clean(toPath);
+    const src = this.resolveIn(root, from);
+    const dst = this.resolveIn(root, to);
+    if (to === from) throw new BadRequestException({ code: 'SAME_PATH', message: 'Target is the same path.' });
+    if (to.startsWith(`${from}/`)) throw new BadRequestException({ code: 'INTO_SELF', message: 'Cannot move a folder into itself.' });
+    let st;
+    try {
+      st = await lstat(src);
+    } catch {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Source not found.' });
+    }
+    if (st.isSymbolicLink()) throw new BadRequestException({ code: 'SYMLINK', message: 'Symlinks are not managed here.' });
+    let dstSt;
+    try {
+      dstSt = await lstat(dst);
+    } catch { /* free */ }
+    if (dstSt) throw new BadRequestException({ code: 'TARGET_EXISTS', message: 'Target already exists.' });
+    await mkdir(dst.slice(0, dst.lastIndexOf(sep)), { recursive: true });
+    try {
+      await this.run('mv', [src, dst]);
+    } catch {
+      throw new BadRequestException({ code: 'RENAME_FAILED', message: 'Rename failed.' });
+    }
+    const { deploymentId, serviceId: sid, serviceName, workspaceId } = meta;
+    await this.audit.record('SERVICE_FILE_RENAMED', 'success', {
+      actorType: 'user',
+      actorUserId: userId,
+      workspaceId,
+      resourceType: 'service',
+      resourceId: sid,
+      metadata: { service: serviceName, deployment: deploymentId, from, to, via: 'files-tab' },
+    });
+    return { from, to };
+  }
+
+  /** Server-side recursive copy (duplicate); bounded by MAX_COPY_DEPTH. */
+  async copy(userId: string, serviceId: string, fromPath: string, toPath: string): Promise<{ from: string; to: string }> {
+    const meta = await this.activeRoot(userId, serviceId);
+    const root = meta.root;
+    const clean = (p: string): string => {
+      const trimmed = String(p ?? '').replace(/^\/+|\/+$/g, '');
+      if (!trimmed || trimmed.includes('..') || trimmed.includes('\\') || trimmed.split('/').some((s) => !s || s === '.')) {
+        throw new BadRequestException({ code: 'BAD_PATH', message: 'Invalid path.' });
+      }
+      return trimmed;
+    };
+    const from = clean(fromPath);
+    const to = clean(toPath);
+    const src = this.resolveIn(root, from);
+    const dst = this.resolveIn(root, to);
+    if (dst.startsWith(`${src}${sep}`) || to.startsWith(`${from}/`)) {
+      throw new BadRequestException({ code: 'INTO_SELF', message: 'Cannot copy a folder into itself.' });
+    }
+    let dstSt;
+    try {
+      dstSt = await lstat(dst);
+    } catch { /* free */ }
+    if (dstSt) throw new BadRequestException({ code: 'TARGET_EXISTS', message: 'Target already exists.' });
+    try {
+      await this.run('cp', ['-a', src, dst]);
+    } catch {
+      throw new BadRequestException({ code: 'COPY_FAILED', message: 'Copy failed.' });
+    }
+    const { deploymentId, serviceId: sid, serviceName, workspaceId } = meta;
+    await this.audit.record('SERVICE_FILE_COPIED', 'success', {
+      actorType: 'user',
+      actorUserId: userId,
+      workspaceId,
+      resourceType: 'service',
+      resourceId: sid,
+      metadata: { service: serviceName, deployment: deploymentId, from, to, via: 'files-tab' },
+    });
+    return { from, to };
+  }
+
+  /** Promise wrapper around execFile for filesystem ops inside the release root. */
+  private run(cmd: string, args: string[]): Promise<void> {
+    return new Promise((res, rej) => {
+      execFile(cmd, args, { timeout: 30_000 }, (err) => (err ? rej(err) : res()));
+    });
   }
 
   /** Raw file bytes for download (any file type, up to 100 MB). */
@@ -288,244 +432,6 @@ export class ServiceFilesService {
       metadata: { service: serviceName, path: relPath, via: 'file-manager' },
     });
     return { removed: relPath };
-  }
-
-  /** Rename (or move, when `to` contains a directory segment) within the deployment. */
-  async rename(userId: string, serviceId: string, from: string, to: string): Promise<{ from: string; to: string }> {
-    const { root, serviceId: sid, serviceName, workspaceId } = await this.activeRoot(userId, serviceId);
-    if (!from || !to) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Both source and target paths are required.' });
-    }
-    if (from === to) return { from, to };
-    const src = this.resolveIn(root, from);
-    const dst = this.resolveIn(root, to);
-    const existing = await lstat(src).catch(() => null);
-    if (!existing) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'File not found.' });
-    }
-    if (existing.isSymbolicLink()) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Refusing to rename a symlink.' });
-    }
-    const clash = await lstat(dst).catch(() => null);
-    if (clash) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Target already exists — choose another name.' });
-    }
-    await mkdir(resolve(dst, '..'), { recursive: true });
-    await fsRename(src, dst);
-    await this.audit.record('SERVICE_FILE_RENAMED', 'success', {
-      actorType: 'user',
-      actorUserId: userId,
-      workspaceId,
-      resourceType: 'service',
-      resourceId: sid,
-      metadata: { service: serviceName, from, to, via: 'file-manager' },
-    });
-    return { from, to };
-  }
-
-  /** Copy a file or folder inside the deployment (never follows symlinks). */
-  async copy(userId: string, serviceId: string, from: string, to: string): Promise<{ from: string; to: string }> {
-    const { root, serviceId: sid, serviceName, workspaceId } = await this.activeRoot(userId, serviceId);
-    if (!from || !to) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Both source and target paths are required.' });
-    }
-    const src = this.resolveIn(root, from);
-    const dst = this.resolveIn(root, to);
-    if (dst.startsWith(src + sep)) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Cannot copy a folder into itself.' });
-    }
-    const existing = await lstat(src).catch(() => null);
-    if (!existing) {
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'File not found.' });
-    }
-    if (existing.isSymbolicLink()) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Refusing to copy a symlink.' });
-    }
-    const clash = await lstat(dst).catch(() => null);
-    if (clash) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Target already exists — choose another name.' });
-    }
-    if (existing.isFile()) {
-      if (existing.size > MAX_UPLOAD_BYTES) {
-        throw new BadRequestException({
-          code: 'VALIDATION_ERROR',
-          message: `File too large to copy (${Math.round(existing.size / 1024 / 1024)} MB). Maximum ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`,
-        });
-      }
-      await mkdir(resolve(dst, '..'), { recursive: true });
-      await fsCp(src, dst, { errorOnExist: true, force: false });
-    } else if (existing.isDirectory()) {
-      const stats = await this.walkCaps(src);
-      await mkdir(resolve(dst, '..'), { recursive: true });
-      await fsCp(src, dst, { recursive: true, errorOnExist: true, force: false });
-      await this.audit.record('SERVICE_FILE_COPIED', 'success', {
-        actorType: 'user',
-        actorUserId: userId,
-        workspaceId,
-        resourceType: 'service',
-        resourceId: sid,
-        metadata: { service: serviceName, from, to, files: stats.files, bytes: stats.bytes, via: 'file-manager' },
-      });
-      return { from, to };
-    } else {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Unsupported file type.' });
-    }
-    await this.audit.record('SERVICE_FILE_COPIED', 'success', {
-      actorType: 'user',
-      actorUserId: userId,
-      workspaceId,
-      resourceType: 'service',
-      resourceId: sid,
-      metadata: { service: serviceName, from, to, via: 'file-manager' },
-    });
-    return { from, to };
-  }
-
-  /** Pre-flight size/count caps for a recursive folder copy. */
-  private async walkCaps(dir: string, depth = 0): Promise<{ files: number; bytes: number }> {
-    if (depth > MAX_COPY_DEPTH) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: `Folder is nested too deeply to copy (max ${MAX_COPY_DEPTH} levels).`,
-      });
-    }
-    let files = 0;
-    let bytes = 0;
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return { files, bytes };
-    }
-    for (const e of entries) {
-      const full = join(dir, e.name);
-      if (e.isSymbolicLink()) continue; // never follow or duplicate links
-      if (e.isDirectory()) {
-        const sub = await this.walkCaps(full, depth + 1);
-        files += sub.files;
-        bytes += sub.bytes;
-      } else {
-        files += 1;
-        const st = await stat(full).catch(() => null);
-        bytes += st?.size ?? 0;
-      }
-      if (files > MAX_COPY_FILES) {
-        throw new BadRequestException({
-          code: 'VALIDATION_ERROR',
-          message: `Folder too large to copy (max ${MAX_COPY_FILES.toLocaleString()} files).`,
-        });
-      }
-      if (bytes > MAX_COPY_BYTES) {
-        throw new BadRequestException({
-          code: 'VALIDATION_ERROR',
-          message: `Folder too large to copy (max ${MAX_COPY_BYTES / 1024 / 1024} MB).`,
-        });
-      }
-    }
-    return { files, bytes };
-  }
-
-  /**
-   * Recursive name search across the whole deployment (case-insensitive
-   * substring). Skips symlinks; capped so huge trees (node_modules) cannot
-   * stall the request.
-   */
-  async search(userId: string, serviceId: string, q: string): Promise<{ query: string; items: FileEntry[]; truncated: boolean }> {
-    const { root } = await this.activeRoot(userId, serviceId);
-    const needle = String(q ?? '').trim().toLowerCase();
-    if (!needle) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Search term is required.' });
-    }
-    const items: FileEntry[] = [];
-    let truncated = false;
-    let scanned = 0;
-    const walk = async (dir: string, rel: string, depth: number): Promise<void> => {
-      if (truncated || scanned >= MAX_SEARCH_SCANNED || depth > MAX_COPY_DEPTH) return;
-      let entries;
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const e of entries) {
-        if (truncated || scanned >= MAX_SEARCH_SCANNED) {
-          truncated = truncated || scanned >= MAX_SEARCH_SCANNED;
-          return;
-        }
-        scanned += 1;
-        if (e.isSymbolicLink()) continue;
-        if (e.name === '.well-known' && rel === '') continue;
-        const childRel = rel ? `${rel}/${e.name}` : e.name;
-        const isDir = e.isDirectory();
-        if (e.name.toLowerCase().includes(needle)) {
-          const full = join(dir, e.name);
-          let size = 0;
-          let modified = new Date(0);
-          try {
-            const st = await stat(full);
-            size = st.size;
-            modified = st.mtime;
-          } catch { /* raced — list it anyway */ }
-          items.push({ name: e.name, path: childRel, type: isDir ? 'dir' : 'file', size, modified: modified.toISOString() });
-          if (items.length >= MAX_SEARCH_RESULTS) {
-            truncated = true;
-            return;
-          }
-        }
-        if (isDir) await walk(join(dir, e.name), childRel, depth + 1);
-      }
-    };
-    await walk(root, '', 0);
-    return { query: needle, items, truncated };
-  }
-
-  /**
-   * Deployment usage snapshot for the file-manager sidebar: total size,
-   * file/dir counts and the most recently modified files. Same caps and
-   * symlink rules as search — huge trees cannot stall the request.
-   */
-  async usage(userId: string, serviceId: string): Promise<{ bytes: number; files: number; dirs: number; recent: FileEntry[] }> {
-    const { root } = await this.activeRoot(userId, serviceId);
-    let bytes = 0;
-    let files = 0;
-    let dirs = 0;
-    const all: FileEntry[] = [];
-    let scanned = 0;
-    const walk = async (dir: string, rel: string, depth: number): Promise<void> => {
-      if (scanned >= MAX_SEARCH_SCANNED || depth > MAX_COPY_DEPTH) return;
-      let entries;
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const e of entries) {
-        if (scanned >= MAX_SEARCH_SCANNED) return;
-        scanned += 1;
-        if (e.isSymbolicLink()) continue;
-        if (e.name === '.well-known' && rel === '') continue;
-        const childRel = rel ? `${rel}/${e.name}` : e.name;
-        if (e.isDirectory()) {
-          dirs += 1;
-          await walk(join(dir, e.name), childRel, depth + 1);
-          continue;
-        }
-        const full = join(dir, e.name);
-        let size = 0;
-        let modified = new Date(0);
-        try {
-          const st = await stat(full);
-          size = st.size;
-          modified = st.mtime;
-        } catch { /* raced — count it with zeros */ }
-        files += 1;
-        bytes += size;
-        all.push({ name: e.name, path: childRel, type: 'file', size, modified: modified.toISOString() });
-      }
-    };
-    await walk(root, '', 0);
-    all.sort((a, b) => b.modified.localeCompare(a.modified));
-    return { bytes, files, dirs, recent: all.slice(0, 10) };
   }
 
   /** Binary-safe single-file upload into the live deployment (raw body). */

@@ -1,3 +1,8 @@
+node_modules/
+.svelte-kit/
+build/
+dist/
+*.log
 # Dependencies
 node_modules/
 .pnpm-store/

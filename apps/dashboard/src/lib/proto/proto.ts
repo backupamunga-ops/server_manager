@@ -147,7 +147,7 @@ let ui: Record<string, unknown> = {
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   confirmTypeValue: '',
   busy: null as string | null,
-  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null; loadedFor: string | null; sortSel: string; selected: Record<string, boolean>; renaming: { path: string; name: string } | null; search: string | null; searchItems: { name: string; path: string; type: string; size: number; modified: string }[]; searchTruncated: boolean; view: string; deep: boolean; special: string; favs: { p: string; t: string }[]; treeOpen: Record<string, boolean>; treeItems: Record<string, { name: string; path: string; type: string; size: number; modified: string }[]>; usage: { bytes: number; files: number; dirs: number; recent: { name: string; path: string; type: string; size: number; modified: string }[] } | null; details: { name: string; path: string; type: string; size: number; modified: string } | null; float: { kind: string; x: number; y: number; path?: string; name?: string; type?: string } | null; sidebarOpen: boolean },
+  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null; loadedFor: string | null; sortSel: string; selected: Record<string, boolean>; renaming: { path: string; name: string } | null; search: string | null; searchItems: { name: string; path: string; type: string; size: number; modified: string }[]; searchTruncated: boolean; view: string; deep: boolean; favs: { p: string; t: string }[]; float: { kind: string; x: number; y: number; path?: string; name?: string; type?: string } | null },
   fileEdit: null as null | { serviceId: string; path: string; loading: boolean; content: string; size: number; modified: string; dirty: boolean; error: string | null },
   filePath: '',
   pTree: null as null | { projectId: string; open: Record<string, boolean>; items: Record<string, { name: string; path: string; type: string; size: number; modified: string }[]>; loading: Record<string, boolean>; error: Record<string, string>; autoTried: string | null },
@@ -823,21 +823,15 @@ interface FilesState {
   searchTruncated: boolean;
   view: 'list' | 'grid' | 'details';
   deep: boolean;
-  special: 'none' | 'recent' | 'favorites';
   favs: { p: string; t: string }[];
-  treeOpen: Record<string, boolean>;
-  treeItems: Record<string, FmItem[]>;
-  usage: { bytes: number; files: number; dirs: number; recent: FmItem[] } | null;
-  details: FmItem | null;
   float: { kind: 'new' | 'row' | 'more'; x: number; y: number; path?: string; name?: string; type?: string } | null;
-  sidebarOpen: boolean;
 }
 const filesState = (): FilesState => {
   if (!ui.files) {
     ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null, loadedFor: null,
       sortSel: 'name', selected: {}, renaming: null, search: null, searchItems: [], searchTruncated: false,
-      view: (localStorage.getItem('drevanta.fm.view') as FilesState['view']) || 'list', deep: false, special: 'none',
-      favs: [], treeOpen: {}, treeItems: {}, usage: null, details: null, float: null, sidebarOpen: false } as FilesState;
+      view: (localStorage.getItem('drevanta.fm.view') as FilesState['view']) || 'list', deep: false,
+      favs: [], float: null } as FilesState;
   }
   return ui.files as FilesState;
 };
@@ -858,16 +852,6 @@ const filesExtU = (name: string): string => {
   const ext = name.includes('.') ? name.split('.').pop()! : '';
   return ext ? `${ext.toUpperCase()} file` : 'File';
 };
-/** Best-effort metadata for a favorited path from any cached listing. */
-function filesFindMeta(path: string): FmItem | null {
-  const f = filesState();
-  const pools = [f.items, f.searchItems, ...Object.values(f.treeItems), f.usage?.recent ?? []];
-  for (const pool of pools) {
-    const hit = pool.find((x) => x.path === path);
-    if (hit) return hit;
-  }
-  return null;
-}
 
 interface FileEditState {
   serviceId: string;
@@ -938,28 +922,6 @@ async function filesLoad(serviceId: string, path: string): Promise<void> {
   }
   f.loading = false;
   render();
-  void filesUsageLoad(serviceId); // refresh quota bar + Recent in the background
-}
-
-/** Sidebar quota/Recent snapshot (cheap capped walk, fire-and-forget). */
-async function filesUsageLoad(serviceId: string): Promise<void> {
-  try {
-    const u = await api.serviceFiles.usage(serviceId);
-    if (ui.serviceId === serviceId) filesState().usage = u;
-  } catch { /* sidebar just stays empty */ }
-}
-
-/** Lazy folder-tree fetch for the FOLDERS section. */
-async function filesTreeLoad(serviceId: string, path: string): Promise<void> {
-  const f = filesState();
-  const key = `${serviceId}|${path}`;
-  if (f.treeItems[key] || f.loading) return;
-  f.treeItems[key] = []; // reserve to avoid refetch loops
-  try {
-    const res = await api.serviceFiles.list(serviceId, path);
-    f.treeItems[key] = res.items;
-  } catch { /* leave the branch empty */ }
-  render();
 }
 
 /** Recursive search across the whole live release (server-side walk, capped). */
@@ -999,19 +961,6 @@ function filesSorted(items: FmItem[]): FmItem[] {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
-}
-
-const filesRawUrl = (sid: string, path: string, inline: boolean): string =>
-  `/api/v1/services/${sid}/files/raw?path=${encodeURIComponent(path)}${inline ? '&disp=inline' : ''}`;
-
-const filesImageExt = (name: string): boolean =>
-  /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)$/i.test(name);
-
-/** "report copy.pdf" / "notes copy.md" — never collides unless it already exists. */
-function filesDupName(name: string): string {
-  const dot = name.lastIndexOf('.');
-  if (dot > 0) return `${name.slice(0, dot)} copy${name.slice(dot)}`;
-  return `${name} copy`;
 }
 
 /* ── Project-level file tree — one root per application service ──
@@ -1164,6 +1113,25 @@ function fileEditUrl(serviceId: string, path: string): string {
   return `/services/${serviceId}?edit=${encodeURIComponent(path)}`;
 }
 
+const filesImageExt = (name: string): boolean =>
+  /\.(png|jpe?g|gif|svg|webp|ico|avif)$/i.test(name);
+const filesRawUrl = (serviceId: string, path: string, inline = false): string =>
+  `/api/v1/services/${serviceId}/files/raw?path=${encodeURIComponent(path)}${inline ? '&disp=inline' : ''}`;
+
+/** Panel-drop uploads: several files at once, one reload at the end. */
+async function filesUploadMany(serviceId: string, drops: File[]): Promise<void> {
+  const f = filesState();
+  for (const file of drops) {
+    try {
+      const res = await api.serviceFiles.upload(serviceId, f.path ? `${f.path}/${file.name}` : file.name, file);
+      flash(`Uploaded ${esc(res.path)} (${filesBytes(res.size)}).`);
+    } catch (err) {
+      flash(err instanceof ApiError ? err.message : `Could not upload ${esc(file.name)}.`, true);
+    }
+  }
+  await filesLoad(serviceId, f.path);
+}
+
 async function loadFileEdit(): Promise<void> {
   const w = window as unknown as { __fileEditUnloadWired?: boolean };
   if (!w.__fileEditUnloadWired) {
@@ -1196,64 +1164,44 @@ function fileEditView(): string {
   const s = service(sid);
   const wantPath = new URLSearchParams(window.location.search).get('edit') || '';
   const fe = ui.fileEdit as FileEditState | null;
-  if (!s) return emptyMissing('Service');
+  if (!s) return `<div class="dfm-editor-head"><strong>File not found</strong></div><div class="dfm-editor-foot">This editor window expects a valid service context. Close it and reopen the file from the Files tab.</div>`;
   if (!fe || fe.serviceId !== sid || fe.path !== wantPath) {
     ui.fileEdit = { serviceId: sid, path: wantPath, loading: true, content: '', size: 0, modified: '', dirty: false, error: null } as FileEditState;
     void loadFileEdit();
-    return `<button class="back" data-action="fileEditClose">${ico('back', 15)} Back to files</button><div class="card"><p class="muted small">Opening ${esc(wantPath)}…</p></div>`;
+    return `<div class="dfm-editor-head"><span class="row" style="gap:10px"><span class="status-icon mint" style="width:30px;height:30px">${ico('code', 15)}</span><strong class="mono">${esc(wantPath)}</strong></span><span class="row" style="gap:8px">${badge('Opening', 'blue')}${btn('Close', 'fileEditClose', 'btn-small', '')}</span></div><div class="dfm-editor-foot"><span class="muted small">Loading ${esc(wantPath)}...</span></div>`;
   }
   if (fe.error) {
-    return `<button class="back" data-action="fileEditClose">${ico('back', 15)} Back to files</button><div class="card empty"><h3>Could not open the file</h3><p>${esc(fe.error)}</p></div>`;
+    return `<div class="dfm-editor-head"><strong class="mono">${esc(fe.path)}</strong>${btn('Close', 'fileEditClose', 'btn-small', '')}</div><div class="dfm-editor-foot"><span class="muted small">${esc(fe.error)}</span></div>`;
   }
   const kind = filesKind(fe.path, false);
-  return `<button class="back" data-action="fileEditClose">${ico('back', 15)} Back to files</button>
-    <div class="heading"><div><div class="row" style="gap:10px"><span class="status-icon ${kind.color}" style="width:36px;height:36px">${ico(kind.icon, 18)}</span><h1 class="detail-title mono" style="font-size:19px">${esc(fe.path)}</h1><span id="fileEditDirty" class="tag ${fe.dirty ? 'warn' : 'ok'}">${fe.dirty ? 'Unsaved' : 'Saved'}</span></div><p class="detail-meta">${esc(s.name)} · live deployment · ${fe.loading ? 'loading…' : `${filesBytes(fe.size)} · last modified ${date(fe.modified)}`}</p></div>
-    <div class="head-actions">
-      ${btn(`${ico('upload', 15)} Download`, 'fileEditDownload', 'btn-small', `data-path="${attr(fe.path)}"`)}
-      ${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${sid}"`)}
-      ${btn(`${ico('check', 15)} Save`, 'fileEditSave', 'btn-primary', `data-path="${attr(fe.path)}"`)}
-    </div></div>
-    <div class="card" style="padding:0;overflow:hidden"><textarea id="fileEditor" class="sql-editor" style="width:100%;min-height:60vh;border:0;border-radius:0;background:transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;line-height:1.65;padding:16px 18px;box-shadow:none" spellcheck="false" placeholder="Empty file — start typing…">${esc(fe.content)}</textarea></div>
-    <div class="soft-banner" style="margin-top:14px">${ico('code', 18)}<div><strong class="small">Save with Ctrl+S</strong><p class="muted xs">Saves write straight to the running deployment. Static files are live immediately; if the app reads files at boot, press Restart app.</p></div></div>`;
-}
-
-/** Folder-tree rows for the FOLDERS sidebar section (lazy-loaded, cached). */
-function fmTree(sid: string, path: string, depth: number): string {
-  const f = filesState();
-  const kids = (f.treeItems[`${sid}|${path}`] ?? []).filter((x) => x.type === 'dir')
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const open = f.treeOpen[path] ?? false;
-  return kids.map((d) => {
-    const childOpen = f.treeOpen[d.path] ?? false;
-    const caret = `<button class="dfm-chev ${childOpen ? 'open' : ''}" data-action="filesTree" data-path="${attr(d.path)}" aria-label="Expand ${attr(d.name)}">${ico('arrow', 11)}</button>`;
-    return `<div class="dfm-tree-row ${f.path === d.path && f.special === 'none' && f.search === null ? 'selected' : ''}" style="padding-left:${8 + depth * 14}px" data-dfm-drop="${attr(d.path)}" data-action="filesOpen" data-path="${attr(d.path)}" role="treeitem" tabindex="0">${caret}<span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="dfm-tree-name">${esc(d.name)}</span></div>`
-      + (childOpen ? fmTree(sid, d.path, depth + 1) : '');
-  }).join('');
+  return `<div class="dfm-editor-head">
+      <span class="row" style="gap:10px;min-width:0"><span class="status-icon ${kind.color}" style="width:30px;height:30px">${ico(kind.icon, 15)}</span><strong class="mono dfm-editor-path">${esc(fe.path)}</strong><span id="fileEditDirty" class="tag ${fe.dirty ? 'warn' : 'ok'}">${fe.dirty ? 'Unsaved' : 'Saved'}</span></span>
+      <span class="row" style="gap:8px">
+        <span class="muted xs dfm-editor-meta">${esc(s.name)} &#183; ${fe.loading ? 'loading...' : `${filesBytes(fe.size)} &#183; ${date(fe.modified)}`}</span>
+        ${btn(`${ico('upload', 14)} Download`, 'fileEditDownload', 'btn-small', `data-path="${attr(fe.path)}"`)}
+        ${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${sid}"`)}
+        ${btn(`${ico('check', 15)} Save`, 'fileEditSave', 'btn-primary btn-small', `data-path="${attr(fe.path)}"`)}
+        ${btn(`${ico('close', 14)} Close`, 'fileEditClose', 'btn-small', '')}
+      </span></div>
+    <textarea id="fileEditor" class="dfm-editor-area" spellcheck="false" placeholder="Empty file — start typing…">${esc(fe.content)}</textarea>
+    <div class="dfm-editor-foot"><span class="muted xs"><strong>Ctrl+S</strong> saves straight to the running deployment. Static files are live immediately; if the app reads files at boot, press Restart app.</span><span class="muted xs">Editing ${esc(fe.path)} &#183; live release</span></div>`;
 }
 
 function appFilesView(s: ServiceRec): string {
   const f = filesState();
-  // Auto-load current directory + sidebar snapshot on first visit (view fns
-  // are sync — fetches finish and re-render; loadedFor guards loops). Keyed
-  // by service AND path; search/recent/favorites modes skip the dir auto-load.
+  // Auto-load the current directory on first visit (view fns are sync — the
+  // fetch finishes and re-renders; loadedFor guards against loops). Keyed by
+  // service AND path: switching services must refetch, otherwise the previous
+  // service's cached listing renders under this one. Search mode skips the
+  // auto-load — its results are already in state.
   filesLoadFavs(s.id);
-  if (f.search === null && f.special === 'none' && f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
-  if (!f.usage) void filesUsageLoad(s.id);
+  if (f.search === null && f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
   const searching = f.search !== null;
   const creating = f.creating;
   const renaming = f.renaming;
+  const parent = String(f.path || '').split('/').slice(0, -1).join('/');
   const selCount = Object.keys(f.selected).length;
-  const title = f.special === 'recent' ? 'Recent'
-    : f.special === 'favorites' ? 'Favorites'
-    : searching ? `Search: ${f.search ?? ''}`
-    : f.path ? filesBase(f.path) : 'Home';
-
-  const inSpecial = f.special !== 'none';
-  const listItems = f.special === 'recent'
-    ? (f.usage?.recent ?? [])
-    : f.special === 'favorites'
-      ? f.favs.map((x) => filesFindMeta(x.p) ?? { name: filesBase(x.p), path: x.p, type: x.t, size: 0, modified: '' })
-      : searching ? f.searchItems : filesSorted(f.items);
+  const listItems = searching ? f.searchItems : filesSorted(f.items);
 
   /* ── content renderers ── */
   const fileChip = (it: FmItem, size = 15): string => {
@@ -1269,18 +1217,18 @@ function appFilesView(s: ServiceRec): string {
   const selBox = (it: FmItem): string =>
     `<input type="checkbox" class="file-sel" data-path="${attr(it.path)}"${f.selected[it.path] ? ' checked' : ''} aria-label="Select ${attr(it.name)}" />`;
 
-  const emptyState = `<div class="dfm-empty"><div class="big">${f.special === 'favorites' ? '&#9734;' : f.special === 'recent' ? '&#124;' : '&#9636;'}</div><strong>${searching ? 'No matching files' : f.special === 'favorites' ? 'No favorites yet' : f.special === 'recent' ? 'Nothing recent yet' : 'Nothing here yet'}</strong><span>${searching ? 'Try a shorter term - deep search covers every folder in the release.' : f.special === 'none' ? 'Create a folder or upload files to get started.' : 'Items you star or edit will show up here.'}</span></div>`;
+  const emptyState = `<div class="dfm-empty"><div class="big">&#9636;</div><strong>${searching ? 'No matching files' : 'Nothing here yet'}</strong><span>${searching ? 'Try a shorter term - deep search covers every folder in the release.' : 'Create a folder or upload files to get started.'}</span></div>`;
 
   const gridHtml = `<div class="dfm-grid">${listItems.map((it) =>
-    `<div class="dfm-card ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-dfm-path="${attr(it.path)}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" role="button" tabindex="0" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-dfm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">${selBox(it)}${fileChip(it, 17)}<div class="name" title="${attr(it.path)}">${esc(it.name)}</div><div class="meta">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)}</div></div>`).join('')}</div>`;
+    `<div class="dfm-card ${f.selected[it.path] ? 'selected' : ''}" data-action="filesSelectCard" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" role="button" tabindex="0" ondblclick="window.__dfmDbl && window.__dfmDbl(this)" data-dfm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">${selBox(it)}<span class="dfm-carddots">${dotsBtn(it)}</span>${fileChip(it, 17)}<div class="name" title="${attr(it.path)}">${esc(it.name)}</div><div class="meta">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)}</div></div>`).join('')}</div>`;
 
   const tableHead = `<thead><tr><th style="width:30px"><input type="checkbox" id="filesSelAll" title="Select all" aria-label="Select all" /></th><th>Name</th>${f.view === 'details' ? '<th>Type</th>' : ''}<th style="width:1%;white-space:nowrap">Size</th>${f.view === 'details' ? '<th style="width:1%;white-space:nowrap">Last modified</th>' : ''}<th style="width:36px"></th></tr></thead>`;
   const rowsHtml = listItems.map((it) => {
-    const searchingRow = searching || inSpecial;
+    const searchingRow = searching;
     const nameCell = it.type === 'dir'
       ? `<button class="link dfm-name" data-action="filesOpen" data-path="${attr(it.path)}"${searchingRow ? ' data-clear-search="1"' : ''}><strong>${esc(it.name)}${it.type === 'dir' ? '/' : ''}</strong></button>`
       : `<span class="dfm-name mono">${esc(it.name)}</span>`;
-    return `<tr class="dfm-row ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-dfm-path="${attr(it.path)}" data-dfm-name="${attr(it.name)}" data-dfm-type="${attr(it.type)}" data-dfm-size="${it.size}" data-dfm-modified="${attr(it.modified)}" data-file-name="${attr((searchingRow ? it.path : it.name).toLowerCase())}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-dfm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">
+    return `<tr class="dfm-row ${f.selected[it.path] ? 'selected' : ''}" data-fm-path="${attr(it.path)}" data-fm-name="${attr(it.name)}" data-fm-type="${attr(it.type)}" data-fm-size="${it.size}" data-fm-modified="${attr(it.modified)}" data-file-name="${attr((searchingRow ? it.path : it.name).toLowerCase())}" data-action="filesSelectCard" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" ondblclick="window.__dfmDbl && window.__dfmDbl(this)" data-dfm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">
     <td>${selBox(it)}</td>
     <td class="main-cell"><div class="row" style="gap:10px;align-items:center">${fileChip(it)}<div class="dfm-filename">${nameCell}${starBtn(it)}</div>${searchingRow ? `<span class="muted xs dfm-subpath">${esc(it.path)}</span>` : ''}</div></td>
     ${f.view === 'details' ? `<td class="muted small">${it.type === 'dir' ? 'Folder' : filesExtU(it.name)}</td>` : ''}
@@ -1297,56 +1245,6 @@ function appFilesView(s: ServiceRec): string {
   const bulkBar = selCount > 0
     ? `<div class="dfm-selectionbar"><strong>${selCount} selected</strong><span class="row" style="gap:6px">${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}<button class="dfm-clearsel" data-action="filesClearSel" aria-label="Clear selection">&#10005;</button></span></div>`
     : '';
-
-  /* ── sidebar ── */
-  const u = f.usage;
-  const quotaPct = u ? Math.min(100, Math.round((u.bytes / (100 * 1024 * 1024)) * 100)) : 0;
-  const treeRootOpen = f.treeOpen[''] ?? false;
-  const sidebar = `<aside class="dfm-sidebar ${f.sidebarOpen ? 'open' : ''}" aria-label="File manager navigation">
-    <div class="dfm-navlabel">RELEASE</div>
-    <div class="dfm-navitem ${!inSpecial && !searching ? 'active' : ''}" data-dfm-drop="" data-action="filesHome" role="button" tabindex="0"><span class="dfm-ico">${ico('server', 14)}</span> My Files <span class="dfm-count">${u ? u.files : ''}</span></div>
-    <div class="dfm-section">
-      <div class="dfm-navitem ${f.special === 'recent' ? 'active' : ''}" data-action="filesSpecial" data-k="recent" role="button" tabindex="0"><span class="dfm-ico">${ico('clock', 14)}</span> Recent</div>
-      <div class="dfm-navitem ${f.special === 'favorites' ? 'active' : ''}" data-action="filesSpecial" data-k="favorites" role="button" tabindex="0"><span class="dfm-ico">&#9734;</span> Favorites</div>
-    </div>
-    <div class="dfm-section dfm-folders">
-      <div class="dfm-navlabel">FOLDERS <button class="dfm-plus" data-action="filesMenu" data-kind="new" data-op-hint="newfolder" aria-label="Create folder">&#43;</button></div>
-      <div class="dfm-tree" role="tree">
-        <div class="dfm-tree-row ${f.path === '' && !inSpecial && !searching ? 'selected' : ''}" data-dfm-drop="" data-action="filesHome" role="treeitem" tabindex="0"><button class="dfm-chev ${treeRootOpen ? 'open' : ''}" data-action="filesTree" data-path="" aria-label="Expand tree">${ico('arrow', 11)}</button><span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="dfm-tree-name">Home</span></div>
-        ${treeRootOpen ? fmTree(s.id, '', 1) : ''}
-      </div>
-    </div>
-    <div class="dfm-storage">
-      <div class="dfm-storage-head"><span>Release size</span><small>${u ? `${u.dirs} folders` : ''}</small></div>
-      <div class="dfm-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${quotaPct}"><div class="dfm-bar" style="width:${quotaPct}%"></div></div>
-      <div class="dfm-storage-note">${u ? `${filesBytes(u.bytes)} used &#183; ${u.files} files` : 'Measuring...'}</div>
-    </div>
-  </aside>`;
-
-  /* ── details pane ── */
-  const d = f.details;
-  const detailsPane = `<aside class="dfm-rightpane ${d ? 'open' : ''}" aria-label="File details">
-    <div class="dfm-details-head"><h3>File details</h3><button class="dfm-closebtn" data-action="filesDetailsClose" aria-label="Close details">&#10005;</button></div>
-    ${d ? `<div class="dfm-details-body">
-      <div class="dfm-details-hero">${fileChip(d, 21)}</div>
-      <div class="dfm-details-name mono">${esc(d.name)}</div>
-      <div class="dfm-details-type">${d.type === 'dir' ? 'Folder' : filesExtU(d.name)}</div>
-      <dl class="dfm-meta">
-        <dt>Path</dt><dd class="mono">${esc(d.path)}</dd>
-        <dt>Size</dt><dd>${d.type === 'dir' ? '&#8212;' : filesBytes(d.size)}</dd>
-        <dt>Modified</dt><dd title="${attr(d.modified)}">${d.modified ? filesWhen(d.modified) : '&#8212;'}</dd>
-      </dl>
-      <div class="dfm-details-actions">
-        ${starBtn(d)}
-        ${d.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}"`) : btn('Open', 'filesOpen', 'btn-small', `data-path="${attr(d.path)}"`)}
-        ${d.type === 'file' && filesImageExt(d.name) ? btn('Preview', 'filesPreview', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}"`) : ''}
-        ${d.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path="${attr(d.path)}"`) : ''}
-        ${btn('Rename', 'filesRenameAsk', 'btn-small', `data-path="${attr(d.path)}" data-name="${attr(d.name)}"`)}
-        ${btn('Duplicate', 'filesDuplicate', 'btn-small', `data-path="${attr(d.path)}" data-name="${attr(d.name)}"`)}
-        ${btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}" data-name="${attr(d.name)}"`)}
-      </div>
-    </div>` : `<div class="dfm-empty"><div class="big">&#9636;</div><strong>Select a file</strong><span>Details, actions and previews appear here.</span></div>`}
-  </aside>`;
 
   /* ── floating menus ── */
   let floatHtml = '';
@@ -1365,21 +1263,17 @@ function appFilesView(s: ServiceRec): string {
   const segBtn = (v: string, label: string): string =>
     `<button class="${f.view === v ? 'active' : ''}" data-action="filesView" data-v="${v}" title="${label} view" aria-label="${label} view" aria-pressed="${f.view === v}">${v === 'list' ? '&#9776;' : v === 'grid' ? '&#8862;' : '&#9776;&#9635;'}</button>`;
 
-  return `<div class="dfm-shell">${sidebar}
-  <div class="dfm-main">
-    <div class="dfm-heading">
-      <button class="dfm-burger" data-action="filesSidebar" aria-label="Toggle sidebar">&#9776;</button>
-      <div><h3 class="section-title" style="margin:0">${esc(title)}</h3><div class="dfm-crumbs">${filesBreadcrumb(f.path)}</div></div>
-      <div class="dfm-actions">
-        <button class="dfm-lightbtn" data-action="filesMenu" data-kind="new">&#43; New &#9662;</button>
-        <button class="btn btn-primary btn-small" data-action="filesPick" data-mode="file">${ico('upload', 14)} Upload files</button>
-        <button class="iconbtn" data-action="filesMenu" data-kind="more" aria-label="More actions">${ico('dots', 15)}</button>
-      </div>
-    </div>
+  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
+    <div><h3 class="section-title">${esc(f.path ? filesBase(f.path) : 'Home')}</h3><div class="dfm-crumbs">${filesBreadcrumb(f.path)}</div></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="dfm-lightbtn" data-action="filesMenu" data-kind="new">&#43; New &#9662;</button>
+      <button class="btn btn-primary btn-small" data-action="filesPick" data-mode="file">${ico('upload', 14)} Upload files</button>
+      <button class="iconbtn" data-action="filesMenu" data-kind="more" aria-label="More actions">${ico('dots', 15)}</button>
+    </div></div>
     <input type="file" id="filesZipInput" hidden ${f.zipMode === 'release' ? 'accept=".zip"' : ''} />
     ${creating ? `<div class="card" style="margin-bottom:14px"><form id="filesCreateForm" class="row" style="gap:10px;padding:4px 0"><input id="filesCreateName" class="mono" style="flex:1" maxlength="200" autocomplete="off" spellcheck="false" placeholder="${creating === 'file' ? 'new-file.js' : 'new-folder'}" /><button class="btn btn-primary btn-small" type="submit">Create ${esc(creating)}</button><button class="btn btn-small" type="button" data-action="filesCancelCreate">Cancel</button></form></div>` : ''}
-    ${renaming ? `<div class="card" style="margin-bottom:14px"><form id="filesRenameForm" class="row" style="gap:10px;padding:4px 0"><span class="muted small" style="white-space:nowrap">Rename <strong class="mono">${esc(renaming.name)}</strong> to</span><input id="filesRenameTarget" class="mono" style="flex:1" maxlength="300" autocomplete="off" spellcheck="false" value="${attr(renaming.name)}" /><button class="btn btn-primary btn-small" type="submit">Rename</button><button class="btn btn-small" type="button" data-action="filesCancelRename">Cancel</button></form><p class="muted xs" style="margin:6px 0 0">Tip: include a folder in the target (e.g. <span class="mono">assets/${esc(renaming.name)}</span>) to move it there. You can also drag rows onto sidebar folders.</p></div>` : ''}
-    <div class="card dfm-panel" id="filesDropCard" data-dfm-drop="${attr(f.path)}">
+    ${renaming ? `<div class="card" style="margin-bottom:14px"><form id="filesRenameForm" class="row" style="gap:10px;padding:4px 0"><span class="muted small" style="white-space:nowrap">Rename <strong class="mono">${esc(renaming.name)}</strong> to</span><input id="filesRenameTarget" class="mono" style="flex:1" maxlength="300" autocomplete="off" spellcheck="false" value="${attr(renaming.name)}" /><button class="btn btn-primary btn-small" type="submit">Rename</button><button class="btn btn-small" type="button" data-action="filesCancelRename">Cancel</button></form><p class="muted xs" style="margin:6px 0 0">Tip: include a folder in the target (e.g. <span class="mono">assets/${esc(renaming.name)}</span>) to move it there.</p></div>` : ''}
+    <div class="card dfm-panel" id="filesDropCard">
       <div class="dfm-panel-head">
         <div class="dfm-panel-head-left">
           <form id="filesGlobalSearchForm" class="dfm-searchrow"><label class="dfm-search"><span>&#8902;</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="iconbtn ${f.deep ? 'deepon' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">&#8943;</button></form>
@@ -1400,26 +1294,22 @@ function appFilesView(s: ServiceRec): string {
       <div class="dfm-status"><span>${listItems.length} items${selCount ? ` &#183; ${selCount} selected` : ''}${f.loading ? ' &#183; loading...' : ''}</span><span><b>Live release</b> &#183; <span class="dfm-live">&#9679;</span> real files</span></div>
     </div>
     <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart - it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build &#8594; health check &#8594; route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>
-  </div>
-  ${detailsPane}
-  ${floatHtml}</div>`;
+  ${floatHtml}`;
 }
 
 /** Double-click handler: folders navigate, files open the editor tab. */
-(window as unknown as { __fmDbl?: (el: HTMLElement) => void }).__fmDbl = (el: HTMLElement): void => {
+(window as unknown as { __dfmDbl?: (el: HTMLElement) => void }).__dfmDbl = (el: HTMLElement): void => {
   const mode = el.dataset.dfmDbl;
-  const path = el.dataset.dfmPath ?? '';
-  const name = el.dataset.dfmName ?? '';
+  const path = el.dataset.fmPath ?? '';
   if (!mode || !path) return;
   if (mode === 'open') {
     const f = filesState();
     f.search = null;
     f.searchItems = [];
-    f.special = 'none';
     void filesLoad(ui.serviceId as string, path);
   } else {
     const sid = ui.serviceId as string;
-    if (sid && path) window.open(`/services/${sid}?edit=${encodeURIComponent(path)}`, '_blank', 'noopener');
+    if (sid && path) window.open(fileEditUrl(sid, path), '_blank', 'noopener');
   }
 };
 
@@ -2428,13 +2318,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       f.selected = {};
       f.renaming = null;
       f.creating = null;
-      f.special = 'none';
-      f.details = null;
       f.float = null;
-      f.treeOpen = {};
-      f.treeItems = {};
-      f.usage = null;
-      f.sidebarOpen = false;
       ui.showPassword = false;
       go('service', null, id);
       break;
@@ -2661,41 +2545,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       if (!sid) break;
       const f = filesState();
       if (el.dataset.clearSearch === '1' || f.search !== null) { f.search = null; f.searchItems = []; }
-      f.special = 'none';
-      f.details = null;
       void filesLoad(sid, String(el.dataset.path ?? ''));
-      break;
-    }
-    case 'filesHome': {
-      const sid = ui.serviceId as string;
-      if (!sid) break;
-      const f = filesState();
-      f.search = null;
-      f.searchItems = [];
-      f.special = 'none';
-      f.details = null;
-      void filesLoad(sid, '');
-      break;
-    }
-    case 'filesSpecial': {
-      const f = filesState();
-      f.special = String(el.dataset.k ?? 'none') as FilesState['special'];
-      f.search = null;
-      f.searchItems = [];
-      f.details = null;
-      f.selected = {};
-      render();
-      break;
-    }
-    case 'filesTree': {
-      const sid = ui.serviceId as string;
-      const path = String(el.dataset.path ?? '');
-      if (!sid) break;
-      const f = filesState();
-      if (f.treeOpen[path]) { delete f.treeOpen[path]; render(); break; }
-      f.treeOpen[path] = true;
-      void filesTreeLoad(sid, path);
-      render();
       break;
     }
     case 'filesView': {
@@ -2713,20 +2563,81 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       if (inp) inp.focus();
       break;
     }
-    case 'filesSidebar': {
-      filesState().sidebarOpen = !filesState().sidebarOpen;
-      render();
-      break;
-    }
-    case 'filesDetails': {
+    case 'filesSelectCard': {
       const f = filesState();
-      f.details = { name: String(el.dataset.name ?? ''), path: String(el.dataset.path ?? ''), type: String(el.dataset.type ?? 'file'), size: Number(el.dataset.size ?? 0), modified: String(el.dataset.modified ?? '') };
+      const path = String(el.dataset.path ?? '');
+      if (!path) break;
+      f.selected[path] = !f.selected[path];
       render();
       break;
     }
-    case 'filesDetailsClose': {
-      filesState().details = null;
+    case 'filesClearSel': {
+      filesState().selected = {};
       render();
+      break;
+    }
+    case 'filesBulkDelete': {
+      const sid = ui.serviceId as string;
+      const f = filesState();
+      const paths = Object.keys(f.selected);
+      if (!sid || !paths.length) break;
+      const ok = await confirmModal(`Delete ${paths.length} selected item(s)? This cannot be undone.`, true);
+      if (!ok) break;
+      let done = 0;
+      for (const p of paths) {
+        try { await api.serviceFiles.remove(sid, p); done += 1; }
+        catch (err) { flash(err instanceof ApiError ? `${p}: ${err.message}` : `${p}: delete failed.`, true); }
+      }
+      f.selected = {};
+      flash(`Deleted ${done} of ${paths.length}.`);
+      await filesLoad(sid, f.path);
+      break;
+    }
+    case 'filesClearSearch': {
+      const sid = ui.serviceId as string;
+      const f = filesState();
+      f.search = null;
+      f.searchItems = [];
+      f.searchTruncated = false;
+      if (sid) await filesLoad(sid, f.path); else render();
+      break;
+    }
+    case 'filesRenameAsk': {
+      const f = filesState();
+      f.renaming = { path: String(el.dataset.path ?? ''), name: String(el.dataset.name ?? '') };
+      render();
+      const inp = document.getElementById('filesRenameTarget') as HTMLInputElement | null;
+      if (inp) { inp.focus(); inp.select(); }
+      break;
+    }
+    case 'filesCancelRename': {
+      filesState().renaming = null;
+      render();
+      break;
+    }
+    case 'filesDuplicate': {
+      const sid = ui.serviceId as string;
+      const path = String(el.dataset.path ?? '');
+      const name = String(el.dataset.name ?? '');
+      if (!sid || !path) break;
+      const dot = name.lastIndexOf('.');
+      const copyName = dot > 0 ? `${name.slice(0, dot)} (copy)${name.slice(dot)}` : `${name} (copy)`;
+      const dir = filesParent(path);
+      const to = dir ? `${dir}/${copyName}` : copyName;
+      try {
+        await api.serviceFiles.copy(sid, path, to);
+        flash(`Duplicated to ${esc(to)}.`);
+        await filesLoad(sid, filesState().path);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Duplicate failed.', true);
+      }
+      break;
+    }
+    case 'filesPreview': {
+      const sid = String(el.dataset.id ?? ui.serviceId ?? '');
+      const path = String(el.dataset.path ?? '');
+      if (!sid || !path) break;
+      window.open(filesRawUrl(sid, path, true), '_blank', 'noopener');
       break;
     }
     case 'filesMenu': {
@@ -2734,8 +2645,8 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       const r = el.getBoundingClientRect();
       f.float = {
         kind: String(el.dataset.kind ?? 'row') as 'new' | 'row' | 'more',
-        x: Math.min(r.left, window.innerWidth - 200),
-        y: Math.min(r.bottom + 4, window.innerHeight - 220),
+        x: Math.min(r.left, window.innerWidth - 210),
+        y: Math.min(r.bottom + 4, window.innerHeight - 240),
         path: el.dataset.path, name: el.dataset.name, type: el.dataset.type,
       };
       render();
@@ -2768,8 +2679,22 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       }
       if (op === 'edit' && sid && path) { window.open(fileEditUrl(sid, path), '_blank', 'noopener'); break; }
       if (op === 'preview' && sid && path) { window.open(filesRawUrl(sid, path, true), '_blank', 'noopener'); break; }
-      if (op === 'download' && path) { window.open(`/api/v1/services/${sid}/files/raw?path=${encodeURIComponent(path)}`, '_blank', 'noopener'); break; }
+      if (op === 'download' && path) { window.open(filesRawUrl(sid, path, false), '_blank', 'noopener'); break; }
       if (op === 'rename') { f.renaming = { path, name }; render(); (document.getElementById('filesRenameTarget') as HTMLInputElement | null)?.select(); break; }
+      if (op === 'duplicate') {
+        const dot = name.lastIndexOf('.');
+        const copyName = dot > 0 ? `${name.slice(0, dot)} (copy)${name.slice(dot)}` : `${name} (copy)`;
+        const dir = filesParent(path);
+        const to = dir ? `${dir}/${copyName}` : copyName;
+        try {
+          await api.serviceFiles.copy(sid, path, to);
+          flash(`Duplicated to ${esc(to)}.`);
+          await filesLoad(sid, f.path);
+        } catch (err) {
+          flash(err instanceof ApiError ? err.message : 'Duplicate failed.', true);
+        }
+        break;
+      }
       if (op === 'star') {
         const i = f.favs.findIndex((x) => x.p === path);
         if (i >= 0) f.favs.splice(i, 1); else f.favs.push({ p: path, t: type });
@@ -2784,7 +2709,6 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         try {
           await api.serviceFiles.remove(sid, path);
           flash(`Deleted ${esc(name || path)}.`);
-          if (f.details?.path === path) f.details = null;
           await filesLoad(sid, f.path);
         } catch (err) {
           flash(err instanceof ApiError ? err.message : 'Could not delete the file.', true);
@@ -2792,26 +2716,6 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         break;
       }
       render();
-      break;
-    }
-    case 'filesMoveDrop': {
-      // Internal drag: a row was dropped onto a sidebar folder or the root.
-      const sid = ui.serviceId as string;
-      const fromPath = String(el.dataset.from ?? '');
-      const toDir = String(el.dataset.dir ?? '');
-      if (!sid || !fromPath) break;
-      const target = toDir ? `${toDir}/${filesBase(fromPath)}` : filesBase(fromPath);
-      if (target === fromPath) break;
-      try {
-        await api.serviceFiles.rename(sid, fromPath, target);
-        flash(`Moved to ${esc(target)}.`);
-        const f = filesState();
-        f.treeItems = {}; // stale caches after a move
-        await filesLoad(sid, f.path);
-        void filesUsageLoad(sid);
-      } catch (err) {
-        flash(err instanceof ApiError ? err.message : 'Could not move it.', true);
-      }
       break;
     }
     case 'filesStar': {
@@ -2899,74 +2803,6 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       f.zipMode = String(el.dataset.mode ?? 'extract') as FilesState['zipMode'];
       const inp = document.getElementById('filesZipInput') as HTMLInputElement | null;
       inp?.click();
-      break;
-    }
-    case 'filesClearSearch': {
-      const sid = ui.serviceId as string;
-      const f = filesState();
-      f.search = null;
-      f.searchItems = [];
-      f.searchTruncated = false;
-      if (sid) void filesLoad(sid, f.path);
-      else render();
-      break;
-    }
-    case 'filesRenameAsk': {
-      const f = filesState();
-      f.renaming = { path: String(el.dataset.path ?? ''), name: String(el.dataset.name ?? '') };
-      render();
-      const inp = document.getElementById('filesRenameTarget') as HTMLInputElement | null;
-      if (inp) { inp.focus(); inp.select(); }
-      break;
-    }
-    case 'filesCancelRename': {
-      filesState().renaming = null;
-      render();
-      break;
-    }
-    case 'filesDuplicate': {
-      const sid = ui.serviceId as string;
-      const path = String(el.dataset.path ?? '');
-      const name = String(el.dataset.name ?? '');
-      if (!sid || !path) break;
-      const dir = path.split('/').slice(0, -1).join('/');
-      const target = (dir ? `${dir}/` : '') + filesDupName(name);
-      try {
-        await api.serviceFiles.copy(sid, path, target);
-        flash(`Copied to ${esc(target)}.`);
-        await filesLoad(sid, filesState().path);
-      } catch (err) {
-        flash(err instanceof ApiError ? err.message : 'Could not duplicate it.', true);
-      }
-      break;
-    }
-    case 'filesClearSel': {
-      filesState().selected = {};
-      render();
-      break;
-    }
-    case 'filesBulkDelete': {
-      const sid = ui.serviceId as string;
-      const f = filesState();
-      const paths = Object.keys(f.selected);
-      if (!sid || paths.length === 0) break;
-      const ok = await confirmModal(`Delete ${paths.length} item${paths.length === 1 ? '' : 's'}? This cannot be undone.`, true);
-      if (!ok) break;
-      let failed = 0;
-      for (const p of paths) {
-        try { await api.serviceFiles.remove(sid, p); } catch { failed += 1; }
-      }
-      f.selected = {};
-      if (failed) flash(`Deleted ${paths.length - failed}, failed ${failed} — check the Activity log.`, true);
-      else flash(`Deleted ${paths.length} item${paths.length === 1 ? '' : 's'}.`);
-      await filesLoad(sid, f.path);
-      break;
-    }
-    case 'filesPreview': {
-      const sid = String(el.dataset.id ?? ui.serviceId ?? '');
-      const path = String(el.dataset.path ?? '');
-      if (!sid || !path) break;
-      window.open(filesRawUrl(sid, path, true), '_blank', 'noopener');
       break;
     }
     case 'filesRestart': {
@@ -3513,29 +3349,6 @@ async function handleSubmit(e: Event): Promise<void> {
     })();
     return;
   }
-  if (form.id === 'filesRenameForm') {
-    const sid = ui.serviceId as string;
-    const inp = document.getElementById('filesRenameTarget') as HTMLInputElement | null;
-    const to = (inp?.value || '').trim().replace(/^\/+|\/+$/g, '');
-    const f = filesState();
-    const fromPath = f.renaming?.path ?? '';
-    f.renaming = null;
-    if (!sid || !fromPath || !to) { render(); return; }
-    const dir = fromPath.split('/').slice(0, -1).join('/');
-    const target = (dir ? `${dir}/` : '') + to;
-    if (target === fromPath) { render(); return; }
-    (async () => {
-      try {
-        await api.serviceFiles.rename(sid, fromPath, target);
-        flash(`Renamed to ${esc(target)}.`);
-        await filesLoad(sid, f.path);
-      } catch (err) {
-        flash(err instanceof ApiError ? err.message : 'Could not rename it.', true);
-        render();
-      }
-    })();
-    return;
-  }
   if (form.id === 'filesGlobalSearchForm') {
     const sid = ui.serviceId as string;
     const inp = document.getElementById('filesSearch') as HTMLInputElement | null;
@@ -3545,6 +3358,27 @@ async function handleSubmit(e: Event): Promise<void> {
     if (!term) { flash('Type a name to search for first.'); return; }
     if (!filesState().deep) { flash('Deep search is off - typing filters the open folder live. Toggle the switch beside the box to search everywhere.'); return; }
     void filesSearchAll(sid, term);
+    return;
+  }
+  if (form.id === 'filesRenameForm') {
+    const sid = ui.serviceId as string;
+    const f = filesState();
+    const ren = f.renaming;
+    const inp = document.getElementById('filesRenameTarget') as HTMLInputElement | null;
+    const target = (inp?.value || '').trim().replace(/^\/+|\/+$/g, '');
+    e.preventDefault();
+    f.renaming = null;
+    if (!sid || !ren || !target || target === ren.path) { render(); return; }
+    (async () => {
+      try {
+        await api.serviceFiles.rename(sid, ren.path, target);
+        flash(`Renamed to ${esc(target)}.`);
+        await filesLoad(sid, f.path);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Rename failed.', true);
+        render();
+      }
+    })();
     return;
   }
   if (form.id === 'sqlConsoleForm') {
@@ -3887,8 +3721,11 @@ function render(): void {
     storageIndex: storageOverview, docs: docsView, fileEdit: fileEditView,
   };
   const page = (pageFns[ui.page as string] || overview)();
-  const nextHtml =
-    `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div>${appFooter()}</main></div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`;
+  // The editor opens as a complete standalone window: no workspace sidebar,
+  // no topbar, no footer — just the file editor filling the viewport.
+  const nextHtml = ui.page === 'fileEdit'
+    ? `<div class="dfm-editor-window">${page}</div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`
+    : `<div class="mobile-shade ${ui.mobileMenu ? 'open' : ''}" data-action="mobileMenu"></div><div class="app">${sidebar()}<main class="main">${header()}<div class="content">${page}</div>${appFooter()}</main></div>${ui.modal ? modalView() : ''}${ui.confirmBox ? confirmModalView() : ''}`;
   if (nextHtml === lastRenderedHtml) {
     renderToast();
     return;
@@ -4030,26 +3867,20 @@ async function onChange(e: Event): Promise<void> {
   }
   if (target.id === 'filesSelAll') {
     const f = filesState();
-    f.selected = {};
+    const boxes = Array.from(document.querySelectorAll<HTMLInputElement>('.file-sel'));
     if (target.checked) {
-      document.querySelectorAll('input.file-sel').forEach((c) => {
-        const p = (c as HTMLInputElement).dataset.path;
-        if (p) f.selected[p] = true;
-      });
+      boxes.forEach((b) => { if (b.dataset.path) f.selected[b.dataset.path] = true; });
+    } else {
+      f.selected = {};
     }
     render();
     return;
   }
   if (target.classList.contains('file-sel')) {
     const f = filesState();
-    const p = target.dataset.path ?? '';
-    if (!p) return;
-    if (target.checked) f.selected[p] = true;
-    else delete f.selected[p];
-    const all = document.querySelectorAll('input.file-sel');
-    const allOn = all.length > 0 && Array.from(all).every((c) => (c as HTMLInputElement).checked);
-    const head = document.getElementById('filesSelAll') as HTMLInputElement | null;
-    if (head) head.checked = allOn;
+    const path = target.dataset.path ?? '';
+    if (!path) return;
+    if (target.checked) f.selected[path] = true; else delete f.selected[path];
     render();
     return;
   }
@@ -4163,7 +3994,7 @@ function onInput(e: Event): void {
   const target = e.target as HTMLInputElement;
   if (target.id === 'filesSearch') {
     // Shallow filter is live while deep search is OFF; with deep ON, Enter
-    // submits the release-wide search instead (onSubmit above).
+    // submits the release-wide search instead (handleSubmit above).
     if (filesState().deep) return;
     const term = target.value.toLowerCase().trim();
     document.querySelectorAll('tr[data-file-name]').forEach((r) => {
@@ -4175,7 +4006,6 @@ function onInput(e: Event): void {
     });
     return;
   }
-  if (target.id === 'filesSortSel') return;
   if (target.id === 'fileEditor') {
     const fe = ui.fileEdit as FileEditState | null;
     if (fe && !fe.dirty) {
@@ -4212,26 +4042,14 @@ function onInput(e: Event): void {
 function onDragOver(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) { e.preventDefault(); z.classList.add('drag'); }
-  // File-manager drop targets: the listing panel, sidebar folders, tree rows.
-  const t = (e.target as HTMLElement).closest('[data-dfm-drop]');
-  if (t) {
-    e.preventDefault();
-    t.classList.add('dfm-dropok');
-  } else {
-    document.querySelectorAll('.dfm-dropok').forEach((x) => x.classList.remove('dfm-dropok'));
-  }
+  const c = (e.target as HTMLElement).closest('#filesDropCard');
+  if (c) { e.preventDefault(); c.classList.add('drag'); }
 }
 function onDragLeave(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) z.classList.remove('drag');
-  const t = (e.target as HTMLElement).closest('[data-dfm-drop]');
-  if (t) t.classList.remove('dfm-dropok');
-}
-function onDragStart(e: DragEvent): void {
-  const row = (e.target as HTMLElement).closest('[data-dfm-path]') as HTMLElement | null;
-  if (!row) return;
-  e.dataTransfer?.setData('application/x-dfm-path', row.dataset.dfmPath ?? '');
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  const c = (e.target as HTMLElement).closest('#filesDropCard');
+  if (c) c.classList.remove('drag');
 }
 function onMouseDown(e: MouseEvent): void {
   // Close the floating New/row/more menu on any click outside it.
@@ -4244,29 +4062,10 @@ function onMouseDown(e: MouseEvent): void {
   }
 }
 async function onDrop(e: DragEvent): Promise<void> {
-  document.querySelectorAll('.dfm-dropok').forEach((x) => x.classList.remove('dfm-dropok'));
-  // Internal move: a dragged row released onto a sidebar folder / tree row / panel.
-  const t = (e.target as HTMLElement).closest('[data-dfm-drop]') as HTMLElement | null;
-  const fmPath = e.dataTransfer?.getData('application/x-dfm-path');
-  if (t && fmPath) {
-    e.preventDefault();
-    e.stopPropagation();
-    const dir = t.dataset.dfmDrop ?? '';
-    const dispatchMove = (): void => {
-      const tmp = document.createElement('button');
-      tmp.dataset.action = 'filesMoveDrop';
-      tmp.dataset.from = fmPath;
-      tmp.dataset.dir = dir;
-      document.body.appendChild(tmp);
-      tmp.click();
-      tmp.remove();
-    };
-    dispatchMove();
-    return;
-  }
   const c = (e.target as HTMLElement).closest('#filesDropCard');
   if (c) {
     e.preventDefault();
+    e.stopPropagation();
     c.classList.remove('drag');
     const sid = ui.serviceId as string;
     const drops = Array.from(e.dataTransfer?.files ?? []);
@@ -4292,27 +4091,6 @@ async function onDrop(e: DragEvent): Promise<void> {
   } catch (err) {
     flash((err as Error).message, true);
   }
-}
-
-/** Sequential drag-drop upload into the current directory. */
-async function filesUploadMany(sid: string, drops: File[]): Promise<void> {
-  const f = filesState();
-  let done = 0;
-  let failed = 0;
-  for (const file of drops) {
-    const target = f.path ? `${f.path}/${file.name}` : file.name;
-    try {
-      await api.serviceFiles.upload(sid, target, file);
-      done += 1;
-      flash(`Uploaded ${esc(target)} (${done}/${drops.length}).`);
-    } catch (err) {
-      failed += 1;
-      flash(`${esc(file.name)}: ${err instanceof ApiError ? err.message : 'upload failed'}.`, true);
-    }
-  }
-  if (done && !failed) flash(`${done} file${done === 1 ? '' : 's'} uploaded.`);
-  if (failed) flash(`${failed} upload${failed === 1 ? '' : 's'} failed.`, true);
-  await filesLoad(sid, f.path);
 }
 function onPopState(): void {
   const r = parsePath(window.location.pathname);
@@ -4359,7 +4137,6 @@ export function mountApp(): () => void {
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('dragleave', onDragLeave);
   document.addEventListener('drop', onDrop);
-  document.addEventListener('dragstart', onDragStart);
   document.addEventListener('mousedown', onMouseDown);
   document.addEventListener('pointerdown', onPointerDown);
   document.addEventListener('pointermove', onPointerMove);
