@@ -150,6 +150,7 @@ let ui: Record<string, unknown> = {
   files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null },
   fileEdit: null as null | { serviceId: string; path: string; loading: boolean; content: string; size: number; modified: string; dirty: boolean; error: string | null },
   filePath: '',
+  pTree: null as null | { projectId: string; open: Record<string, boolean>; items: Record<string, { name: string; path: string; type: string; size: number; modified: string }[]>; loading: Record<string, boolean>; error: Record<string, string>; autoTried: string | null },
 };
 
 /* Server sync — mutations go through runAction / real endpoints. */
@@ -524,8 +525,9 @@ function projectView(): string {
   if (!p) return emptyMissing('Project');
   const ss = state.services.filter((s) => s.projectId === p.id);
   const stored = ss.filter((s) => s.kind === 'storage');
-  const headerPart = `<button class="back" data-action="go" data-page="projects">${ico('back', 15)} All projects</button>${heading('PROJECT / PRODUCTION', p.name, `Created ${date(p.created)} · Default environment: production`, btn(`${ico('plus', 15)} Add service`, 'new', 'btn-primary', `data-project="${p.id}"`))}<div class="soft-banner">${ico('layers', 21)}<div><strong class="small">Production environment</strong><p>Services here share a project and can connect privately when supported.</p></div><div style="margin-left:auto">${badge(`${ss.length} services`, 'blue')}</div></div><div class="tabs project-tabs">${[['services', 'Services'], ['architecture', 'Architecture'], ['storage', 'Storage'], ['settings', 'Settings']].map(([k, t]) => `<button class="tab ${ui.projectTab === k ? 'active' : ''}" data-action="projectTab" data-tab="${k}">${t}</button>`).join('')}</div>`;
+  const headerPart = `<button class="back" data-action="go" data-page="projects">${ico('back', 15)} All projects</button>${heading('PROJECT / PRODUCTION', p.name, `Created ${date(p.created)} · Default environment: production`, btn(`${ico('plus', 15)} Add service`, 'new', 'btn-primary', `data-project="${p.id}"`))}<div class="soft-banner">${ico('layers', 21)}<div><strong class="small">Production environment</strong><p>Services here share a project and can connect privately when supported.</p></div><div style="margin-left:auto">${badge(`${ss.length} services`, 'blue')}</div></div><div class="tabs project-tabs">${[['services', 'Services'], ['files', 'Files'], ['architecture', 'Architecture'], ['storage', 'Storage'], ['settings', 'Settings']].map(([k, t]) => `<button class="tab ${ui.projectTab === k ? 'active' : ''}" data-action="projectTab" data-tab="${k}">${t}</button>`).join('')}</div>`;
   if (ui.projectTab === 'architecture') return headerPart + projectArchitecture(p, ss);
+  if (ui.projectTab === 'files') return headerPart + projectFilesTree(p, ss);
   if (ui.projectTab === 'storage') return headerPart + storageBanner() +
     `<div class="row space" style="margin:20px 0 15px"><h2 class="section-title">Object storage</h2>${btn(`${ico('plus', 14)} Add storage`, 'openModal', 'btn-primary', `data-modal="storageCreate" data-project="${p.id}"`)}</div><div class="grid two">${stored.map((s) => `<div class="card"><div class="row space"><span class="status-icon mint">${ico('bucket', 19)}</span>${statusBadge(s.status)}</div><h3 style="margin:15px 0 6px">${esc(s.name)}</h3><p class="muted small">${bucketsFor(s.id).length} private buckets · ${bytesHuman(storageTotal(s.id))}</p><div class="divider"></div>${btn('Manage storage →', 'openService', '', `data-id="${s.id}"`)} ${btn(`${ico('trash', 13)}`, 'deleteStorage', 'btn-small btn-danger', `data-id="${s.id}" aria-label="Delete storage"`)}</div>`).join('') || '<div class="card empty">No object storage in this project yet.</div>'}</div>`;
   if (ui.projectTab === 'settings') return headerPart + projectSettingsView(p, ss);
@@ -888,6 +890,107 @@ async function filesLoad(serviceId: string, path: string): Promise<void> {
   }
   f.loading = false;
   render();
+}
+
+/* ── Project-level file tree — one root per application service ──
+ * A project bundles several independently deployed services (frontend,
+ * backend, …). The tree shows each service as a root named after the
+ * service; expanding a root lazily fetches its live deployment listing. */
+type PTreeItem = { name: string; path: string; type: string; size: number; modified: string };
+const pTreeKey = (sid: string, path: string) => `${sid}|${path || ''}`;
+const pTreeState = () => {
+  if (!ui.pTree) {
+    ui.pTree = { projectId: '', open: {}, items: {}, loading: {}, error: {}, autoTried: null };
+  }
+  return ui.pTree as { projectId: string; open: Record<string, boolean>; items: Record<string, PTreeItem[]>; loading: Record<string, boolean>; error: Record<string, string>; autoTried: string | null };
+};
+
+async function pTreeLoad(sid: string, path: string): Promise<void> {
+  const t = pTreeState();
+  const key = pTreeKey(sid, path);
+  t.loading[key] = true;
+  render();
+  try {
+    const res = await api.serviceFiles.list(sid, path);
+    t.items[key] = res.items;
+    delete t.error[key];
+  } catch (err) {
+    t.error[key] = err instanceof ApiError ? err.message : 'Could not list this deployment.';
+  }
+  t.loading[key] = false;
+  render();
+}
+
+function pTreeKids(sid: string, depth: number, items: PTreeItem[]): string {
+  const t = pTreeState();
+  const sorted = [...items].sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
+  return `<div class="ptree-kids">${sorted.map((it) => {
+    const pad = `style="padding-left:${depth * 22 + 12}px"`;
+    if (it.type === 'dir') {
+      const key = pTreeKey(sid, it.path);
+      const open = !!t.open[key];
+      const kids = open ? (t.items[key] ? pTreeKids(sid, depth + 1, t.items[key]) : '') : '';
+      return `<div><div class="ptree-row" ${pad}>
+        <button class="ptree-twist ${open ? 'open' : ''}" data-action="ptreeToggle" data-sid="${sid}" data-path="${attr(it.path)}" aria-expanded="${open}" aria-label="Toggle ${esc(it.name)}">${ico('chevron', 13)}</button>
+        <span class="status-icon gold" style="width:24px;height:24px">${ico('projects', 13)}</span>
+        <button class="link mono ptree-name" data-action="ptreeToggle" data-sid="${sid}" data-path="${attr(it.path)}">${esc(it.name)}/</button>
+        ${t.loading[key] ? badge('Loading…', 'blue') : ''}
+      </div>${kids}</div>`;
+    }
+    const k = filesKind(it.name, false);
+    return `<div class="ptree-row" ${pad}>
+      <span class="ptree-twist leaf">${ico('file', 13)}</span>
+      <span class="status-icon ${k.color}" style="width:24px;height:24px">${ico(k.icon, 13)}</span>
+      <span class="mono ptree-name">${esc(it.name)}</span>
+      <span class="muted xs">${filesBytes(it.size)}</span>
+      <span class="ptree-tools">${btn('Edit', 'filesEdit', 'btn-small', `data-id="${sid}" data-path="${attr(it.path)}"`)}${btn('Download', 'fileEditDownload', 'btn-small', `data-id="${sid}" data-path="${attr(it.path)}"`)}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function pTreeRoot(s: ServiceRec): string {
+  const t = pTreeState();
+  const key = pTreeKey(s.id, '');
+  const open = !!t.open[key];
+  const status = !s.activeDeployment
+    ? badge('No live deployment', 'warn')
+    : t.loading[key] ? badge('Loading…', 'blue')
+    : t.error[key] ? badge(t.error[key], 'warn')
+    : badge('Live', 'ok');
+  const kids = open && t.items[key] ? pTreeKids(s.id, 1, t.items[key]) : '';
+  const err = open && t.error[key] ? `<div class="ptree-empty">${esc(t.error[key])}</div>` : '';
+  return `<div class="ptree-root"><div class="ptree-row ptree-service">
+    <button class="ptree-twist ${open ? 'open' : ''}" data-action="ptreeToggle" data-sid="${s.id}" data-path="" aria-expanded="${open}" aria-label="Toggle ${esc(s.name)}">${ico('chevron', 14)}</button>
+    <span class="status-icon mint" style="width:28px;height:28px">${ico('code', 15)}</span>
+    <button class="link mono ptree-name" data-action="ptreeToggle" data-sid="${s.id}" data-path=""><strong>${esc(s.name)}/</strong></button>
+    <span class="ptree-meta">${status}</span>
+    <span class="ptree-tools">${btn('Open manager', 'openService', 'btn-small', `data-id="${s.id}"`)}</span>
+  </div>${err}${kids}</div>`;
+}
+
+function projectFilesTree(p: ProjectRec, ss: ServiceRec[]): string {
+  const t = pTreeState();
+  if (t.projectId !== p.id) {
+    t.projectId = p.id; t.open = {}; t.items = {}; t.loading = {}; t.error = {}; t.autoTried = null;
+  }
+  const apps = ss.filter((s) => s.kind === 'application');
+  const nonApp = ss.filter((s) => s.kind !== 'application');
+  if (t.autoTried !== p.id) {
+    // Auto-expand every live service root once: the depth-1 listing IS the
+    // "which service holds what" overview this tab exists for.
+    t.autoTried = p.id;
+    for (const s of apps) {
+      if (!s.activeDeployment) continue;
+      const key = pTreeKey(s.id, '');
+      if (!t.items[key] && !t.loading[key]) { t.open[key] = true; void pTreeLoad(s.id, ''); }
+    }
+  }
+  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
+    <div><h3 class="section-title">Project file tree</h3><p class="muted xs">One root per application service, named after the service — frontend and backend stay clearly separated</p></div>
+  </div>
+  <div class="ptree">${apps.map((s) => pTreeRoot(s)).join('') || `<div class="card empty"><h3>No application services yet</h3><p>File roots appear here once the project has an application with a live deployment.</p></div>`}</div>
+  ${nonApp.length ? `<div class="soft-banner" style="margin-top:16px">${ico('database', 18)}<div><strong class="small">Databases, storage and cron jobs have no file roots</strong><p class="muted xs">${nonApp.length} non-application ${nonApp.length === 1 ? 'service lives' : 'services live'} in this project (${nonApp.map((s) => esc(s.name)).join(', ')}). Their data is managed through the database console, object storage and cron pages.</p></div></div>` : ''}
+  <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Each root is an independently deployed unit</strong><p class="muted xs">Expanding a root browses that service's live deployment. Uploads, ZIP deploys, restarts and deletes live in each service's Files manager — use “Open manager” on the root row.</p></div></div>`;
 }
 
 /** Shared staging for ZIP uploads: init → receive → finalize. */
@@ -2007,6 +2110,18 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       if (ui.termSession) endTerminalSession('Navigated away from previous container.');
       go('project', id);
       break;
+    case 'ptreeToggle': {
+      const t = pTreeState();
+      const sid = String(el.dataset.sid ?? '');
+      const path = String(el.dataset.path ?? '');
+      if (!sid) break;
+      const key = pTreeKey(sid, path);
+      if (t.open[key]) { t.open[key] = false; render(); break; }
+      t.open[key] = true;
+      if (!t.items[key] && !t.loading[key]) void pTreeLoad(sid, path);
+      else render();
+      break;
+    }
     case 'openService': {
       if (ui.termSession) endTerminalSession('Navigated away from previous container.');
       const target = service(id);
@@ -2283,7 +2398,7 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       break;
     }
     case 'fileEditDownload': {
-      const sid = ui.page === 'fileEdit' ? String((ui.fileEdit as FileEditState | null)?.serviceId ?? ui.serviceId) : String(ui.serviceId);
+      const sid = String(el.dataset.id ?? (ui.fileEdit as FileEditState | null)?.serviceId ?? ui.serviceId ?? '');
       const path = String(el.dataset.path ?? (ui.fileEdit as FileEditState | null)?.path ?? '');
       if (!sid || !path) break;
       window.open(`/api/v1/services/${sid}/files/raw?path=${encodeURIComponent(path)}`, '_blank', 'noopener');

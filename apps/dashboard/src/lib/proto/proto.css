@@ -767,3 +767,23 @@ label.form-label .dd{margin-left:12px}
 .heading{min-width:0}
 .heading .row{flex-wrap:wrap}
 @media(max-width:900px){.tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}}
+/* v1.18: project-level file tree — one root per application service */
+.ptree{display:flex;flex-direction:column;gap:10px}
+.ptree-root{border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}
+.ptree-row{display:flex;align-items:center;gap:9px;padding:10px 12px;min-width:0;flex-wrap:wrap}
+.ptree-row:hover{background:color-mix(in srgb,var(--mint) 5%,transparent)}
+.ptree-service{background:color-mix(in srgb,var(--mint) 7%,transparent);border-bottom:1px solid var(--border)}
+.ptree-twist{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;border:0;background:none;color:var(--muted);cursor:pointer;border-radius:6px;padding:0;transition:transform .15s ease}
+.ptree-twist:hover{background:var(--border)}
+.ptree-twist.open{transform:rotate(90deg);color:var(--text)}
+.ptree-twist.leaf{cursor:default;opacity:.55}
+.ptree-name{font-size:13.5px;text-align:left;min-width:0;overflow-wrap:anywhere}
+.ptree-tools{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.ptree-kids{border-top:1px dashed var(--border);position:relative}
+.ptree-kids .ptree-kids{border-top:0}
+.ptree-empty{padding:14px 16px;font-size:.82rem;color:var(--muted)}
+.ptree-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+@media(max-width:640px){
+  .ptree-tools{margin-left:34px;width:100%}
+  .ptree-row{padding-left:12px !important}
+}
