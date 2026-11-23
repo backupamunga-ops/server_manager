@@ -787,3 +787,11 @@ label.form-label .dd{margin-left:12px}
   .ptree-tools{margin-left:34px;width:100%}
   .ptree-row{padding-left:12px !important}
 }
+/* Files tab: drag-drop highlight + tighter action column */
+#filesDropCard.drag{border-color:#69b9a7;box-shadow:0 0 0 2px rgba(94,191,166,.25)}
+#filesDropCard.drag .table-wrap{opacity:.85}
+#filesDropCard td:last-child .row{gap:4px;flex-wrap:wrap}
+#filesDropCard td:last-child .btn{padding:5px 8px;font-size:11px;min-height:26px}
+@media(max-width:720px){
+  #filesDropCard td:nth-child(3),#filesDropCard th:nth-child(3){display:none}
+}

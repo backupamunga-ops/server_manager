@@ -312,9 +312,15 @@ export const api = {
   },
 
   serviceFiles: {
-    list: (serviceId: string, path = '') =>
-      get<{ path: string; items: FileEntry[] }>(
-        `/services/${serviceId}/files${path ? `?path=${encodeURIComponent(path)}` : ''}`,
+    list: (serviceId: string, path = '', search?: string) =>
+      get<{ path: string; items: FileEntry[]; query?: string; truncated?: boolean }>(
+        `/services/${serviceId}/files${
+          search && search.trim()
+            ? `?search=${encodeURIComponent(search)}`
+            : path
+              ? `?path=${encodeURIComponent(path)}`
+              : ''
+        }`,
       ),
     read: (serviceId: string, path: string) =>
       get<{ path: string; size: number; modified: string; content: string }>(
@@ -351,6 +357,10 @@ export const api = {
       }),
     restart: (serviceId: string) =>
       post<{ container: string; state: string }>(`/services/${serviceId}/restart`),
+    rename: (serviceId: string, from: string, to: string) =>
+      post<{ from: string; to: string }>(`/services/${serviceId}/files/rename`, { from, to }),
+    copy: (serviceId: string, from: string, to: string) =>
+      post<{ from: string; to: string }>(`/services/${serviceId}/files/copy`, { from, to }),
   },
 
   uploads: {

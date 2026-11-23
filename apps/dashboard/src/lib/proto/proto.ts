@@ -147,7 +147,7 @@ let ui: Record<string, unknown> = {
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   confirmTypeValue: '',
   busy: null as string | null,
-  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null },
+  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null; loadedFor: string | null; sortKey: string; sortDir: number; selected: Record<string, boolean>; renaming: { path: string; name: string } | null; search: string | null; searchItems: { name: string; path: string; type: string; size: number; modified: string }[]; searchTruncated: boolean },
   fileEdit: null as null | { serviceId: string; path: string; loading: boolean; content: string; size: number; modified: string; dirty: boolean; error: string | null },
   filePath: '',
   pTree: null as null | { projectId: string; open: Record<string, boolean>; items: Record<string, { name: string; path: string; type: string; size: number; modified: string }[]>; loading: Record<string, boolean>; error: Record<string, string>; autoTried: string | null },
@@ -814,10 +814,18 @@ interface FilesState {
   creating: string | null;
   error: string | null;
   loadedFor: string | null;
+  sortKey: 'name' | 'size' | 'modified';
+  sortDir: 1 | -1;
+  selected: Record<string, boolean>;
+  renaming: { path: string; name: string } | null;
+  search: string | null;
+  searchItems: { name: string; path: string; type: string; size: number; modified: string }[];
+  searchTruncated: boolean;
 }
 const filesState = (): FilesState => {
   if (!ui.files) {
-    ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null, loadedFor: null } as FilesState;
+    ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null, loadedFor: null,
+      sortKey: 'name', sortDir: 1, selected: {}, renaming: null, search: null, searchItems: [], searchTruncated: false } as FilesState;
   }
   return ui.files as FilesState;
 };
@@ -879,6 +887,7 @@ async function filesLoad(serviceId: string, path: string): Promise<void> {
   f.path = path;
   f.loadedFor = `${serviceId}|${path}`; // set before the first render so the view doesn't re-trigger
   f.loading = true;
+  f.selected = {}; // selection never survives a directory change
   render();
   try {
     const res = await api.serviceFiles.list(serviceId, path);
@@ -890,6 +899,56 @@ async function filesLoad(serviceId: string, path: string): Promise<void> {
   }
   f.loading = false;
   render();
+}
+
+/** Recursive search across the whole live release (server-side walk, capped). */
+async function filesSearchAll(serviceId: string, q: string): Promise<void> {
+  const f = filesState();
+  const term = q.trim();
+  if (!term) return;
+  f.loading = true;
+  render();
+  try {
+    const res = await api.serviceFiles.list(serviceId, '', term);
+    f.search = term;
+    f.searchItems = res.items;
+    f.searchTruncated = !!res.truncated;
+    f.error = null;
+  } catch (err) {
+    f.search = term;
+    f.searchItems = [];
+    f.searchTruncated = false;
+    f.error = err instanceof ApiError ? err.message : 'Could not search the release.';
+  }
+  f.loading = false;
+  render();
+}
+
+function filesSorted(items: FilesState['items']): FilesState['items'] {
+  const f = filesState();
+  const key = f.sortKey;
+  const dir = f.sortDir;
+  return [...items].sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1; // folders first, always
+    let cmp = 0;
+    if (key === 'name') cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    else if (key === 'size') cmp = a.size - b.size;
+    else cmp = a.modified.localeCompare(b.modified);
+    return cmp * dir;
+  });
+}
+
+const filesRawUrl = (sid: string, path: string, inline: boolean): string =>
+  `/api/v1/services/${sid}/files/raw?path=${encodeURIComponent(path)}${inline ? '&disp=inline' : ''}`;
+
+const filesImageExt = (name: string): boolean =>
+  /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)$/i.test(name);
+
+/** "report copy.pdf" / "notes copy.md" — never collides unless it already exists. */
+function filesDupName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  if (dot > 0) return `${name.slice(0, dot)} copy${name.slice(dot)}`;
+  return `${name} copy`;
 }
 
 /* ── Project-level file tree — one root per application service ──
@@ -1100,39 +1159,81 @@ function appFilesView(s: ServiceRec): string {
   // Auto-load the current directory on first visit (view fns are sync — the
   // fetch finishes and re-renders; loadedFor guards against loops). Keyed by
   // service AND path: switching services must refetch, otherwise the previous
-  // service's cached listing renders under this one.
-  if (f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
+  // service's cached listing renders under this one. Search mode skips the
+  // auto-load — its results are already in state.
+  if (f.search === null && f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
+  const searching = f.search !== null;
   const creating = f.creating;
+  const renaming = f.renaming;
   const parent = String(f.path || '').split('/').slice(0, -1).join('/');
-  const rows = (f.error ? [] : f.items).map((it) => {
+  const listItems = searching ? f.searchItems : filesSorted(f.items);
+  const selCount = Object.keys(f.selected).length;
+  const rows = (f.error ? [] : listItems).map((it) => {
     const k = filesKind(it.name, it.type === 'dir');
-    const chip = `<span class="status-icon ${k.color}" style="width:28px;height:28px;flex:none">${ico(k.icon, 15)}</span>`;
-    const nameCell = it.type === 'dir'
-      ? `<button class="link" data-action="filesOpen" data-path="${attr(it.path)}"><strong>${esc(it.name)}/</strong></button>`
-      : `<span class="mono small">${esc(it.name)}</span>`;
-    return `<tr data-file-name="${attr(it.name.toLowerCase())}">
-    <td class="main-cell"><div class="row" style="gap:10px">${chip}<div><div>${nameCell}</div><div class="muted xs" style="margin-top:2px">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · <span title="${attr(it.modified)}">${filesWhen(it.modified)}</span></div></div></div></td>
-    <td style="width:1%;white-space:nowrap"><div class="row" style="gap:6px">${it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : ''}${it.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path="${attr(it.path)}"`) : ''}${btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}" data-name="${attr(it.name)}"`)}</div></td>
+    const chip = `<span class=”status-icon ${k.color}” style=”width:28px;height:28px;flex:none”>${ico(k.icon, 15)}</span>`;
+    const label = it.type === 'dir' ? `${esc(it.name)}/` : esc(it.name);
+    const nameCell = searching
+      ? `<button class=”link” data-action=”filesOpen” data-path=”${attr(it.path)}” data-clear-search=”1”><strong>${label}</strong></button>`
+      : it.type === 'dir'
+        ? `<button class=”link” data-action=”filesOpen” data-path=”${attr(it.path)}”><strong>${label}</strong></button>`
+        : `<span class=”mono small”>${label}</span>`;
+    const meta = searching
+      ? `${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · ${esc(it.path)}`
+      : `${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · <span title=”${attr(it.modified)}”>${filesWhen(it.modified)}</span>`;
+    const checked = f.selected[it.path] ? ' checked' : '';
+    const actions = [
+      it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path=”${attr(it.path)}” data-id=”${s.id}”`) : '',
+      it.type === 'file' && filesImageExt(it.name) ? btn(`${ico('external', 13)} Preview`, 'filesPreview', 'btn-small', `data-path=”${attr(it.path)}” data-id=”${s.id}”`) : '',
+      it.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path=”${attr(it.path)}”`) : '',
+      btn('Rename', 'filesRenameAsk', 'btn-small', `data-path=”${attr(it.path)}” data-name=”${attr(it.name)}”`),
+      btn(`${ico('copy', 13)} Duplicate`, 'filesDuplicate', 'btn-small', `data-path=”${attr(it.path)}” data-name=”${attr(it.name)}”`),
+      btn('Delete', 'filesDelete', 'btn-small', `data-path=”${attr(it.path)}” data-id=”${s.id}” data-name=”${attr(it.name)}”`),
+    ].join('');
+    return `<tr data-file-name=”${attr((searching ? it.path : it.name).toLowerCase())}”>
+    <td style=”width:28px”><input type=”checkbox” class=”file-sel” data-path=”${attr(it.path)}”${checked} /></td>
+    <td class=”main-cell”><div class=”row” style=”gap:10px”>${chip}<div><div>${nameCell}</div><div class=”muted xs” style=”margin-top:2px”>${meta}</div></div></div></td>
+    <td style=”width:1%;white-space:nowrap” class=”muted small”>${it.type === 'dir' ? '—' : filesBytes(it.size)}</td>
+    <td style=”width:1%;white-space:nowrap” class=”muted small” title=”${attr(it.modified)}”>${filesWhen(it.modified)}</td>
+    <td style=”width:1%;white-space:nowrap”><div class=”row” style=”gap:6px”>${actions}</div></td>
   </tr>`;
   }).join('');
-  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
-    <div><h3 class="section-title">Deployment files</h3><p class="muted xs">Live release of ${esc(s.name)} — browse, patch, upload and restart without a redeploy</p></div>
-    <div class="row" style="gap:8px;flex-wrap:wrap">
-      <span class="row" style="gap:6px;margin-right:6px">${ico('plus', 13)}${btn('File', 'filesNew', 'btn-small', `data-kind="file"`)}${btn('Folder', 'filesNew', 'btn-small', `data-kind="folder"`)}${btn('Upload file', 'filesPick', 'btn-small', `data-mode="file"`)}</span>
-      <span class="row" style="gap:6px">${btn(`${ico('storage', 14)} ZIP → extract here`, 'filesPick', 'btn-small', `data-mode="extract"`)}${btn(`${ico('deployments', 14)} ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode="release"`)}${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${s.id}"`)}</span>
+  const sortBtn = (key: string, label: string): string =>
+    `<button class=”link” data-action=”filesSort” data-key=”${key}” style=”font-weight:600”>${label}${f.sortKey === key ? (f.sortDir === 1 ? ' ↑' : ' ↓') : ''}</button>`;
+  const thead = `<thead><tr>
+      <th style=”width:28px”><input type=”checkbox” id=”filesSelAll” title=”Select all” /></th>
+      <th>${sortBtn('name', 'Name')}</th>
+      <th style=”width:1%;white-space:nowrap”>${sortBtn('size', 'Size')}</th>
+      <th style=”width:1%;white-space:nowrap”>${sortBtn('modified', 'Modified')}</th>
+      <th style=”width:1%;white-space:nowrap;text-align:right;padding-right:16px”>Actions</th>
+    </tr></thead>`;
+  const searchBanner = searching
+    ? `<div class=”row space” style=”padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap”><div class=”row” style=”gap:8px;flex-wrap:wrap”>${ico('search', 14)}<span class=”small”>Matches for <strong class=”mono”>${esc(f.search ?? '')}</strong> across the whole release${f.searchTruncated ? ' — results capped, refine the term' : ''}</span></div>${btn('Clear search', 'filesClearSearch', 'btn-small', '')}</div>`
+    : '';
+  const bulkBar = selCount > 0
+    ? `<div class=”row space” style=”padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel-2, rgba(0,0,0,.03));gap:10px;flex-wrap:wrap”><span class=”small”><strong>${selCount}</strong> selected</span><span class=”row” style=”gap:6px”>${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}${btn('Clear selection', 'filesClearSel', 'btn-small', '')}</span></div>`
+    : '';
+  return `<div class=”row space” style=”margin-bottom:16px;flex-wrap:wrap;gap:12px”>
+    <div><h3 class=”section-title”>Deployment files</h3><p class=”muted xs”>Live release of ${esc(s.name)} — browse, rename, duplicate, upload and restart without a redeploy</p></div>
+    <div class=”row” style=”gap:8px;flex-wrap:wrap”>
+      <span class=”row” style=”gap:6px;margin-right:6px”>${ico('plus', 13)}${btn('File', 'filesNew', 'btn-small', `data-kind=”file”`)}${btn('Folder', 'filesNew', 'btn-small', `data-kind=”folder”`)}${btn('Upload file', 'filesPick', 'btn-small', `data-mode=”file”`)}</span>
+      <span class=”row” style=”gap:6px”>${btn(`${ico('storage', 14)} ZIP → extract here`, 'filesPick', 'btn-small', `data-mode=”extract”`)}${btn(`${ico('deployments', 14)} ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode=”release”`)}${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id=”${s.id}”`)}</span>
     </div></div>
-    <input type="file" id="filesZipInput" hidden ${f.zipMode === 'release' ? 'accept=".zip"' : ''} />
-    ${creating ? `<div class="card" style="margin-bottom:14px"><form id="filesCreateForm" class="row" style="gap:10px;padding:4px 0"><input id="filesCreateName" class="mono" style="flex:1" maxlength="200" autocomplete="off" spellcheck="false" placeholder="${creating === 'file' ? 'new-file.js' : 'new-folder'}" /><button class="btn btn-primary btn-small" type="submit">Create ${esc(creating)}</button><button class="btn btn-small" type="button" data-action="filesCancelCreate">Cancel</button></form></div>` : ''}
-    <div class="card" style="padding:0;overflow:hidden">
-      <div class="row space" style="padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap">
-        <div class="row" style="gap:6px;flex-wrap:wrap">${ico('projects', 14)}${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 12)} Up`, 'filesOpen', 'btn-small', `data-path="${attr(parent)}"`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
-        <input id="filesSearch" placeholder="Filter by name…" autocomplete="off" spellcheck="false" style="max-width:210px" />
+    <input type=”file” id=”filesZipInput” hidden ${f.zipMode === 'release' ? 'accept=”.zip”' : ''} />
+    ${creating ? `<div class=”card” style=”margin-bottom:14px”><form id=”filesCreateForm” class=”row” style=”gap:10px;padding:4px 0”><input id=”filesCreateName” class=”mono” style=”flex:1” maxlength=”200” autocomplete=”off” spellcheck=”false” placeholder=”${creating === 'file' ? 'new-file.js' : 'new-folder'}” /><button class=”btn btn-primary btn-small” type=”submit”>Create ${esc(creating)}</button><button class=”btn btn-small” type=”button” data-action=”filesCancelCreate”>Cancel</button></form></div>` : ''}
+    ${renaming ? `<div class=”card” style=”margin-bottom:14px”><form id=”filesRenameForm” class=”row” style=”gap:10px;padding:4px 0”><span class=”muted small” style=”white-space:nowrap”>Rename <strong class=”mono”>${esc(renaming.name)}</strong> to</span><input id=”filesRenameTarget” class=”mono” style=”flex:1” maxlength=”300” autocomplete=”off” spellcheck=”false” value=”${attr(renaming.name)}” /><button class=”btn btn-primary btn-small” type=”submit”>Rename</button><button class=”btn btn-small” type=”button” data-action=”filesCancelRename”>Cancel</button></form><p class=”muted xs” style=”margin:6px 0 0”>Tip: include a folder in the target (e.g. <span class=”mono”>assets/${esc(renaming.name)}</span>) to move the file there.</p></div>` : ''}
+    <div class=”card” style=”padding:0;overflow:hidden” id=”filesDropCard”>
+      <div class=”row space” style=”padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap”>
+        <div class=”row” style=”gap:6px;flex-wrap:wrap”>${ico('projects', 14)}${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 12)} Up`, 'filesOpen', 'btn-small', `data-path=”${attr(parent)}”`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
+        <form id=”filesGlobalSearchForm” class=”row” style=”gap:6px”><input id=”filesSearch” placeholder=”Filter here · press Search to search everywhere” autocomplete=”off” spellcheck=”false” style=”max-width:280px” value=”${searching ? attr(f.search ?? '') : ''}” />${btn(`${ico('search', 13)} Search`, 'filesSearchGo', 'btn-small', '')}</form>
       </div>
-      <div class="table-wrap"><table class="table">
-      <thead><tr><th>Name</th><th style="width:1%;white-space:nowrap;text-align:right;padding-right:16px">Actions</th></tr></thead>
-      <tbody>${f.error ? `<tr><td colspan="2"><div class="empty"><h3>${esc(f.error)}</h3></div></td></tr>` : rows || `<tr><td colspan="2"><div class="empty"><h3>Empty directory</h3><p>Upload a ZIP, add files, or deploy a release.</p></div></td></tr>`}</tbody></table></div>
+      ${searchBanner}
+      ${bulkBar}
+      <div class=”table-wrap”><table class=”table”>
+      ${thead}
+      <tbody>${f.error ? `<tr><td colspan=”5”><div class=”empty”><h3>${esc(f.error)}</h3></div></td></tr>` : rows || `<tr><td colspan=”5”><div class=”empty”><h3>${searching ? 'No matches' : 'Empty directory'}</h3><p>${searching ? 'Try a shorter or different term — search covers every file and folder in the release.' : 'Upload a ZIP, drag files here, add files, or deploy a release.'}</p></div></td></tr>`}</tbody></table></div>
+      <div class=”row” style=”padding:8px 16px;border-top:1px solid var(--line)”><span class=”muted xs”>Drag files anywhere onto this panel to upload them into ${f.path ? `<span class=”mono”>${esc(f.path)}/</span>` : 'the root'}</span></div>
     </div>
-    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release” makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>`;
+    <div class=”soft-banner” style=”margin-top:16px”>${ico('code', 18)}<div><strong class=”small”>Two ways to change code on this service</strong><p class=”muted xs”><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release” makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>`;
 }
 
 const safePreviewCommands = ['help', 'pwd', 'ls', 'ls -la', 'whoami', 'node --version',
@@ -2132,6 +2233,14 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
         ui.storagePrefix = '';
         ui.storageSearch = '';
       }
+      // File-manager state never leaks across services.
+      const f = filesState();
+      f.search = null;
+      f.searchItems = [];
+      f.searchTruncated = false;
+      f.selected = {};
+      f.renaming = null;
+      f.creating = null;
       ui.showPassword = false;
       go('service', null, id);
       break;
@@ -2356,6 +2465,8 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
     case 'filesOpen': {
       const sid = ui.serviceId as string;
       if (!sid) break;
+      const f = filesState();
+      if (el.dataset.clearSearch === '1') { f.search = null; f.searchItems = []; }
       void filesLoad(sid, String(el.dataset.path ?? ''));
       break;
     }
@@ -2433,6 +2544,90 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       f.zipMode = String(el.dataset.mode ?? 'extract') as FilesState['zipMode'];
       const inp = document.getElementById('filesZipInput') as HTMLInputElement | null;
       inp?.click();
+      break;
+    }
+    case 'filesSort': {
+      const f = filesState();
+      const key = String(el.dataset.key ?? 'name') as FilesState['sortKey'];
+      if (f.sortKey === key) f.sortDir = (f.sortDir * -1) as 1 | -1;
+      else { f.sortKey = key; f.sortDir = 1; }
+      render();
+      break;
+    }
+    case 'filesSearchGo': {
+      const sid = ui.serviceId as string;
+      const inp = document.getElementById('filesSearch') as HTMLInputElement | null;
+      const term = (inp?.value || '').trim();
+      if (!sid || !term) { flash('Type a name to search for first.'); break; }
+      void filesSearchAll(sid, term);
+      break;
+    }
+    case 'filesClearSearch': {
+      const sid = ui.serviceId as string;
+      const f = filesState();
+      f.search = null;
+      f.searchItems = [];
+      f.searchTruncated = false;
+      if (sid) void filesLoad(sid, f.path);
+      else render();
+      break;
+    }
+    case 'filesRenameAsk': {
+      const f = filesState();
+      f.renaming = { path: String(el.dataset.path ?? ''), name: String(el.dataset.name ?? '') };
+      render();
+      const inp = document.getElementById('filesRenameTarget') as HTMLInputElement | null;
+      if (inp) { inp.focus(); inp.select(); }
+      break;
+    }
+    case 'filesCancelRename': {
+      filesState().renaming = null;
+      render();
+      break;
+    }
+    case 'filesDuplicate': {
+      const sid = ui.serviceId as string;
+      const path = String(el.dataset.path ?? '');
+      const name = String(el.dataset.name ?? '');
+      if (!sid || !path) break;
+      const dir = path.split('/').slice(0, -1).join('/');
+      const target = (dir ? `${dir}/` : '') + filesDupName(name);
+      try {
+        await api.serviceFiles.copy(sid, path, target);
+        flash(`Copied to ${esc(target)}.`);
+        await filesLoad(sid, filesState().path);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Could not duplicate it.', true);
+      }
+      break;
+    }
+    case 'filesClearSel': {
+      filesState().selected = {};
+      render();
+      break;
+    }
+    case 'filesBulkDelete': {
+      const sid = ui.serviceId as string;
+      const f = filesState();
+      const paths = Object.keys(f.selected);
+      if (!sid || paths.length === 0) break;
+      const ok = await confirmModal(`Delete ${paths.length} item${paths.length === 1 ? '' : 's'}? This cannot be undone.`, true);
+      if (!ok) break;
+      let failed = 0;
+      for (const p of paths) {
+        try { await api.serviceFiles.remove(sid, p); } catch { failed += 1; }
+      }
+      f.selected = {};
+      if (failed) flash(`Deleted ${paths.length - failed}, failed ${failed} — check the Activity log.`, true);
+      else flash(`Deleted ${paths.length} item${paths.length === 1 ? '' : 's'}.`);
+      await filesLoad(sid, f.path);
+      break;
+    }
+    case 'filesPreview': {
+      const sid = String(el.dataset.id ?? ui.serviceId ?? '');
+      const path = String(el.dataset.path ?? '');
+      if (!sid || !path) break;
+      window.open(filesRawUrl(sid, path, true), '_blank', 'noopener');
       break;
     }
     case 'filesRestart': {
@@ -2979,6 +3174,29 @@ async function handleSubmit(e: Event): Promise<void> {
     })();
     return;
   }
+  if (form.id === 'filesRenameForm') {
+    const sid = ui.serviceId as string;
+    const inp = document.getElementById('filesRenameTarget') as HTMLInputElement | null;
+    const to = (inp?.value || '').trim().replace(/^\/+|\/+$/g, '');
+    const f = filesState();
+    const fromPath = f.renaming?.path ?? '';
+    f.renaming = null;
+    if (!sid || !fromPath || !to) { render(); return; }
+    const dir = fromPath.split('/').slice(0, -1).join('/');
+    const target = (dir ? `${dir}/` : '') + to;
+    if (target === fromPath) { render(); return; }
+    (async () => {
+      try {
+        await api.serviceFiles.rename(sid, fromPath, target);
+        flash(`Renamed to ${esc(target)}.`);
+        await filesLoad(sid, f.path);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Could not rename it.', true);
+        render();
+      }
+    })();
+    return;
+  }
   if (form.id === 'sqlConsoleForm') {
     e.preventDefault();
     runDemoSql((form.elements.namedItem('query') as HTMLTextAreaElement)?.value || '');
@@ -3454,6 +3672,31 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 async function onChange(e: Event): Promise<void> {
   const target = e.target as HTMLInputElement;
+  if (target.id === 'filesSelAll') {
+    const f = filesState();
+    f.selected = {};
+    if (target.checked) {
+      document.querySelectorAll('input.file-sel').forEach((c) => {
+        const p = (c as HTMLInputElement).dataset.path;
+        if (p) f.selected[p] = true;
+      });
+    }
+    render();
+    return;
+  }
+  if (target.classList.contains('file-sel')) {
+    const f = filesState();
+    const p = target.dataset.path ?? '';
+    if (!p) return;
+    if (target.checked) f.selected[p] = true;
+    else delete f.selected[p];
+    const all = document.querySelectorAll('input.file-sel');
+    const allOn = all.length > 0 && Array.from(all).every((c) => (c as HTMLInputElement).checked);
+    const head = document.getElementById('filesSelAll') as HTMLInputElement | null;
+    if (head) head.checked = allOn;
+    render();
+    return;
+  }
   if (target.id === 'confirmTypeInput') {
     ui.confirmTypeValue = target.value;
     syncConfirmButton();
@@ -3605,12 +3848,26 @@ function onInput(e: Event): void {
 function onDragOver(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) { e.preventDefault(); z.classList.add('drag'); }
+  const c = (e.target as HTMLElement).closest('#filesDropCard');
+  if (c) { e.preventDefault(); c.classList.add('drag'); }
 }
 function onDragLeave(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) z.classList.remove('drag');
+  const c = (e.target as HTMLElement).closest('#filesDropCard');
+  if (c) c.classList.remove('drag');
 }
 async function onDrop(e: DragEvent): Promise<void> {
+  const c = (e.target as HTMLElement).closest('#filesDropCard');
+  if (c) {
+    e.preventDefault();
+    c.classList.remove('drag');
+    const sid = ui.serviceId as string;
+    const drops = Array.from(e.dataTransfer?.files ?? []);
+    if (!sid || drops.length === 0) return;
+    void filesUploadMany(sid, drops);
+    return;
+  }
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (!z) return;
   e.preventDefault();
@@ -3629,6 +3886,27 @@ async function onDrop(e: DragEvent): Promise<void> {
   } catch (err) {
     flash((err as Error).message, true);
   }
+}
+
+/** Sequential drag-drop upload into the current directory. */
+async function filesUploadMany(sid: string, drops: File[]): Promise<void> {
+  const f = filesState();
+  let done = 0;
+  let failed = 0;
+  for (const file of drops) {
+    const target = f.path ? `${f.path}/${file.name}` : file.name;
+    try {
+      await api.serviceFiles.upload(sid, target, file);
+      done += 1;
+      flash(`Uploaded ${esc(target)} (${done}/${drops.length}).`);
+    } catch (err) {
+      failed += 1;
+      flash(`${esc(file.name)}: ${err instanceof ApiError ? err.message : 'upload failed'}.`, true);
+    }
+  }
+  if (done && !failed) flash(`${done} file${done === 1 ? '' : 's'} uploaded.`);
+  if (failed) flash(`${failed} upload${failed === 1 ? '' : 's'} failed.`, true);
+  await filesLoad(sid, f.path);
 }
 function onPopState(): void {
   const r = parsePath(window.location.pathname);

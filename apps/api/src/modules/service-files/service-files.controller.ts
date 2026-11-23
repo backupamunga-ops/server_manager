@@ -58,6 +58,52 @@ class RedeployZipDto {
   uploadId!: string;
 }
 
+class RenameDto {
+  @IsString()
+  @MaxLength(512)
+  from!: string;
+
+  @IsString()
+  @MaxLength(512)
+  to!: string;
+}
+
+class CopyDto {
+  @IsString()
+  @MaxLength(512)
+  from!: string;
+
+  @IsString()
+  @MaxLength(512)
+  to!: string;
+}
+
+/** Content types for inline preview of the raw route. */
+const INLINE_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif',
+  '.txt': 'text/plain; charset=utf-8',
+  '.log': 'text/plain; charset=utf-8',
+  '.json': 'application/json',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.xml': 'application/xml',
+  '.pdf': 'application/pdf',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+};
+
 /** File manager for the LIVE deployment of an application service. */
 @ApiTags('services')
 @Controller('services/:serviceId/files')
@@ -70,8 +116,12 @@ export class ServiceFilesController {
   async list(
     @Param('serviceId') serviceId: string,
     @Query('path') path: string,
+    @Query('search') search: string,
     @CurrentUser() user: { userId: string },
   ) {
+    if (search && search.trim()) {
+      return await this.files.search(user.userId, serviceId, search);
+    }
     return await this.files.list(user.userId, serviceId, path ?? '');
   }
 
@@ -84,19 +134,30 @@ export class ServiceFilesController {
     return await this.files.readContent(user.userId, serviceId, path ?? '');
   }
 
-  /** Raw download — any file type, attachment disposition, session-authed. */
+  /** Raw download/preview — session-authed; disp=inline previews in the browser. */
   @Get('raw')
   async raw(
     @Param('serviceId') serviceId: string,
     @Query('path') path: string,
+    @Query('disp') disp: string,
     @Res() res: Response,
     @CurrentUser() user: { userId: string },
   ): Promise<void> {
     const { data } = await this.files.readRaw(user.userId, serviceId, path ?? '');
     const name = basename(String(path ?? 'download')).replace(/["\\\r\n]/g, '') || 'download';
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    const inline = String(disp ?? '') === 'inline';
+    const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
+    const type = INLINE_TYPES[ext];
+    if (inline && !type) {
+      // Unknown extension — fall back to a safe download.
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    } else {
+      res.setHeader('Content-Type', inline && type ? type : 'application/octet-stream');
+      res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${name}"`);
+    }
     res.setHeader('Content-Length', String(data.length));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.end(data);
   }
 
@@ -152,6 +213,26 @@ export class ServiceFilesController {
     @CurrentUser() user: { userId: string },
   ) {
     return await this.files.extract(user.userId, serviceId, body.uploadId, body.path ?? '');
+  }
+
+  @Post('rename')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async rename(
+    @Param('serviceId') serviceId: string,
+    @Body() body: RenameDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return await this.files.rename(user.userId, serviceId, body.from, body.to);
+  }
+
+  @Post('copy')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async copy(
+    @Param('serviceId') serviceId: string,
+    @Body() body: CopyDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return await this.files.copy(user.userId, serviceId, body.from, body.to);
   }
 
   @Post('redeploy-zip')
