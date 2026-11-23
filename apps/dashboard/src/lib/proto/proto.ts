@@ -3197,6 +3197,15 @@ async function handleSubmit(e: Event): Promise<void> {
     })();
     return;
   }
+  if (form.id === 'filesGlobalSearchForm') {
+    const sid = ui.serviceId as string;
+    const inp = document.getElementById('filesSearch') as HTMLInputElement | null;
+    const term = (inp?.value || '').trim();
+    e.preventDefault();
+    if (!sid || !term) { if (!term) flash('Type a name to search for first.'); return; }
+    void filesSearchAll(sid, term);
+    return;
+  }
   if (form.id === 'sqlConsoleForm') {
     e.preventDefault();
     runDemoSql((form.elements.namedItem('query') as HTMLTextAreaElement)?.value || '');
