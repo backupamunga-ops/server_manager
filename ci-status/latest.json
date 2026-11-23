@@ -1,0 +1,23 @@
+{
+  "commit": "00797943de144ebc9f668404ce9b97f7506dec5f",
+  "ref": "refs/heads/main",
+  "runId": "45162999304",
+  "runUrl": "https://github.com/backupamunga-ops/server_manager/actions/runs/45162999304",
+  "timestamp": "2026-11-23T11:12:52Z",
+  "jobs": {
+    "contracts": "success",
+    "api": "success",
+    "api-steps": {
+      "install": "success",
+      "contracts-build": "success",
+      "prisma-generate": "success",
+      "typecheck": "success",
+      "test": "success"
+    },
+    "dashboard": "success",
+    "agent": "success",
+    "installer-lint": "success",
+    "biome": "success"
+  },
+  "overall": "pass"
+}
