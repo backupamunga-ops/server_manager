@@ -479,6 +479,55 @@ export class ServiceFilesService {
     return { query: needle, items, truncated };
   }
 
+  /**
+   * Deployment usage snapshot for the file-manager sidebar: total size,
+   * file/dir counts and the most recently modified files. Same caps and
+   * symlink rules as search — huge trees cannot stall the request.
+   */
+  async usage(userId: string, serviceId: string): Promise<{ bytes: number; files: number; dirs: number; recent: FileEntry[] }> {
+    const { root } = await this.activeRoot(userId, serviceId);
+    let bytes = 0;
+    let files = 0;
+    let dirs = 0;
+    const all: FileEntry[] = [];
+    let scanned = 0;
+    const walk = async (dir: string, rel: string, depth: number): Promise<void> => {
+      if (scanned >= MAX_SEARCH_SCANNED || depth > MAX_COPY_DEPTH) return;
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (scanned >= MAX_SEARCH_SCANNED) return;
+        scanned += 1;
+        if (e.isSymbolicLink()) continue;
+        if (e.name === '.well-known' && rel === '') continue;
+        const childRel = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) {
+          dirs += 1;
+          await walk(join(dir, e.name), childRel, depth + 1);
+          continue;
+        }
+        const full = join(dir, e.name);
+        let size = 0;
+        let modified = new Date(0);
+        try {
+          const st = await stat(full);
+          size = st.size;
+          modified = st.mtime;
+        } catch { /* raced — count it with zeros */ }
+        files += 1;
+        bytes += size;
+        all.push({ name: e.name, path: childRel, type: 'file', size, modified: modified.toISOString() });
+      }
+    };
+    await walk(root, '', 0);
+    all.sort((a, b) => b.modified.localeCompare(a.modified));
+    return { bytes, files, dirs, recent: all.slice(0, 10) };
+  }
+
   /** Binary-safe single-file upload into the live deployment (raw body). */
   async uploadFile(
     userId: string,

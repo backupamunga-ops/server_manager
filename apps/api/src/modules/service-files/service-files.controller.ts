@@ -125,6 +125,14 @@ export class ServiceFilesController {
     return await this.files.list(user.userId, serviceId, path ?? '');
   }
 
+  @Get('usage')
+  async usage(
+    @Param('serviceId') serviceId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return await this.files.usage(user.userId, serviceId);
+  }
+
   @Get('content')
   async read(
     @Param('serviceId') serviceId: string,

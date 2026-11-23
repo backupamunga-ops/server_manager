@@ -361,6 +361,10 @@ export const api = {
       post<{ from: string; to: string }>(`/services/${serviceId}/files/rename`, { from, to }),
     copy: (serviceId: string, from: string, to: string) =>
       post<{ from: string; to: string }>(`/services/${serviceId}/files/copy`, { from, to }),
+    usage: (serviceId: string) =>
+      get<{ bytes: number; files: number; dirs: number; recent: FileEntry[] }>(
+        `/services/${serviceId}/files/usage`,
+      ),
   },
 
   uploads: {

@@ -147,7 +147,7 @@ let ui: Record<string, unknown> = {
   confirmBox: null as null | { message: string; danger: boolean; typedName?: string; resolve: (v: boolean) => void },
   confirmTypeValue: '',
   busy: null as string | null,
-  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null; loadedFor: string | null; sortKey: string; sortDir: number; selected: Record<string, boolean>; renaming: { path: string; name: string } | null; search: string | null; searchItems: { name: string; path: string; type: string; size: number; modified: string }[]; searchTruncated: boolean },
+  files: null as null | { path: string; items: { name: string; path: string; type: string; size: number; modified: string }[]; loading: boolean; zipMode: string; creating: string | null; error: string | null; loadedFor: string | null; sortSel: string; selected: Record<string, boolean>; renaming: { path: string; name: string } | null; search: string | null; searchItems: { name: string; path: string; type: string; size: number; modified: string }[]; searchTruncated: boolean; view: string; deep: boolean; special: string; favs: { p: string; t: string }[]; treeOpen: Record<string, boolean>; treeItems: Record<string, { name: string; path: string; type: string; size: number; modified: string }[]>; usage: { bytes: number; files: number; dirs: number; recent: { name: string; path: string; type: string; size: number; modified: string }[] } | null; details: { name: string; path: string; type: string; size: number; modified: string } | null; float: { kind: string; x: number; y: number; path?: string; name?: string; type?: string } | null; sidebarOpen: boolean },
   fileEdit: null as null | { serviceId: string; path: string; loading: boolean; content: string; size: number; modified: string; dirty: boolean; error: string | null },
   filePath: '',
   pTree: null as null | { projectId: string; open: Record<string, boolean>; items: Record<string, { name: string; path: string; type: string; size: number; modified: string }[]>; loading: Record<string, boolean>; error: Record<string, string>; autoTried: string | null },
@@ -805,30 +805,69 @@ function applicationService(s: ServiceRec): string {
   return `<div class="grid two"><div class="card"><h3 class="section-title">Service configuration</h3><div class="kv"><span class="k">Source</span><span class="v">${esc(cap(s.source))}</span><span class="k">Framework</span><span class="v">${esc(s.framework)}</span><span class="k">Role</span><span class="v">${esc(cap(s.role))}</span><span class="k">Created</span><span class="v">${date(s.created)}</span></div></div><div class="card" style="border-color:#e5484d"><div class="row space"><h3 class="section-title">Danger zone</h3></div><p class="muted small">Deleting removes the service, its platform routes, database users and deployment history. This cannot be undone.</p><button class="btn" data-action="deleteServiceAsk" data-id="${s.id}" style="color:#ff8f8f;border-color:#e5484d">Delete service</button></div></div>`;
 }
 
-/* ── Files tab — browse/edit the LIVE deployment of an application ── */
+/* ── Files tab — Drive-style manager over the LIVE deployment ── */
+type FmItem = { name: string; path: string; type: string; size: number; modified: string };
 interface FilesState {
   path: string;
-  items: { name: string; path: string; type: string; size: number; modified: string }[];
+  items: FmItem[];
   loading: boolean;
   zipMode: 'file' | 'extract' | 'release';
   creating: string | null;
   error: string | null;
   loadedFor: string | null;
-  sortKey: 'name' | 'size' | 'modified';
-  sortDir: 1 | -1;
+  sortSel: 'name' | 'modified' | 'size' | 'type';
   selected: Record<string, boolean>;
   renaming: { path: string; name: string } | null;
   search: string | null;
-  searchItems: { name: string; path: string; type: string; size: number; modified: string }[];
+  searchItems: FmItem[];
   searchTruncated: boolean;
+  view: 'list' | 'grid' | 'details';
+  deep: boolean;
+  special: 'none' | 'recent' | 'favorites';
+  favs: { p: string; t: string }[];
+  treeOpen: Record<string, boolean>;
+  treeItems: Record<string, FmItem[]>;
+  usage: { bytes: number; files: number; dirs: number; recent: FmItem[] } | null;
+  details: FmItem | null;
+  float: { kind: 'new' | 'row' | 'more'; x: number; y: number; path?: string; name?: string; type?: string } | null;
+  sidebarOpen: boolean;
 }
 const filesState = (): FilesState => {
   if (!ui.files) {
     ui.files = { path: '', items: [], loading: false, zipMode: 'extract', creating: null, error: null, loadedFor: null,
-      sortKey: 'name', sortDir: 1, selected: {}, renaming: null, search: null, searchItems: [], searchTruncated: false } as FilesState;
+      sortSel: 'name', selected: {}, renaming: null, search: null, searchItems: [], searchTruncated: false,
+      view: (localStorage.getItem('drevanta.fm.view') as FilesState['view']) || 'list', deep: false, special: 'none',
+      favs: [], treeOpen: {}, treeItems: {}, usage: null, details: null, float: null, sidebarOpen: false } as FilesState;
   }
   return ui.files as FilesState;
 };
+
+const filesFavKey = (sid: string): string => `drevanta.fm.favs.${sid}`;
+function filesLoadFavs(sid: string): void {
+  const f = filesState();
+  try { f.favs = JSON.parse(localStorage.getItem(filesFavKey(sid)) || '[]'); } catch { f.favs = []; }
+}
+function filesSaveFavs(sid: string): void {
+  localStorage.setItem(filesFavKey(sid), JSON.stringify(filesState().favs));
+}
+const filesIsFav = (f: FilesState, path: string): boolean => f.favs.some((x) => x.p === path);
+
+const filesBase = (path: string): string => path.split('/').filter(Boolean).pop() ?? path;
+const filesParent = (path: string): string => path.split('/').slice(0, -1).join('/');
+const filesExtU = (name: string): string => {
+  const ext = name.includes('.') ? name.split('.').pop()! : '';
+  return ext ? `${ext.toUpperCase()} file` : 'File';
+};
+/** Best-effort metadata for a favorited path from any cached listing. */
+function filesFindMeta(path: string): FmItem | null {
+  const f = filesState();
+  const pools = [f.items, f.searchItems, ...Object.values(f.treeItems), f.usage?.recent ?? []];
+  for (const pool of pools) {
+    const hit = pool.find((x) => x.path === path);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 interface FileEditState {
   serviceId: string;
@@ -899,6 +938,28 @@ async function filesLoad(serviceId: string, path: string): Promise<void> {
   }
   f.loading = false;
   render();
+  void filesUsageLoad(serviceId); // refresh quota bar + Recent in the background
+}
+
+/** Sidebar quota/Recent snapshot (cheap capped walk, fire-and-forget). */
+async function filesUsageLoad(serviceId: string): Promise<void> {
+  try {
+    const u = await api.serviceFiles.usage(serviceId);
+    if (ui.serviceId === serviceId) filesState().usage = u;
+  } catch { /* sidebar just stays empty */ }
+}
+
+/** Lazy folder-tree fetch for the FOLDERS section. */
+async function filesTreeLoad(serviceId: string, path: string): Promise<void> {
+  const f = filesState();
+  const key = `${serviceId}|${path}`;
+  if (f.treeItems[key] || f.loading) return;
+  f.treeItems[key] = []; // reserve to avoid refetch loops
+  try {
+    const res = await api.serviceFiles.list(serviceId, path);
+    f.treeItems[key] = res.items;
+  } catch { /* leave the branch empty */ }
+  render();
 }
 
 /** Recursive search across the whole live release (server-side walk, capped). */
@@ -924,17 +985,19 @@ async function filesSearchAll(serviceId: string, q: string): Promise<void> {
   render();
 }
 
-function filesSorted(items: FilesState['items']): FilesState['items'] {
-  const f = filesState();
-  const key = f.sortKey;
-  const dir = f.sortDir;
+function filesSorted(items: FmItem[]): FmItem[] {
+  const sel = filesState().sortSel;
   return [...items].sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1; // folders first, always
-    let cmp = 0;
-    if (key === 'name') cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-    else if (key === 'size') cmp = a.size - b.size;
-    else cmp = a.modified.localeCompare(b.modified);
-    return cmp * dir;
+    if (sel === 'modified') return b.modified.localeCompare(a.modified); // newest first
+    if (sel === 'size') return b.size - a.size; // biggest first
+    if (sel === 'type') {
+      const ta = a.type === 'dir' ? '0folder' : `1${filesExtU(a.name)}`;
+      const tb = b.type === 'dir' ? '0folder' : `1${filesExtU(b.name)}`;
+      return ta.localeCompare(tb) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    }
+    // Name A-Z: folders first, natural order
+    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 }
 
@@ -1049,7 +1112,7 @@ function projectFilesTree(p: ProjectRec, ss: ServiceRec[]): string {
   </div>
   <div class="ptree">${apps.map((s) => pTreeRoot(s)).join('') || `<div class="card empty"><h3>No application services yet</h3><p>File roots appear here once the project has an application with a live deployment.</p></div>`}</div>
   ${nonApp.length ? `<div class="soft-banner" style="margin-top:16px">${ico('database', 18)}<div><strong class="small">Databases, storage and cron jobs have no file roots</strong><p class="muted xs">${nonApp.length} non-application ${nonApp.length === 1 ? 'service lives' : 'services live'} in this project (${nonApp.map((s) => esc(s.name)).join(', ')}). Their data is managed through the database console, object storage and cron pages.</p></div></div>` : ''}
-  <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Each root is an independently deployed unit</strong><p class="muted xs">Expanding a root browses that service's live deployment. Uploads, ZIP deploys, restarts and deletes live in each service's Files manager — use “Open manager” on the root row.</p></div></div>`;
+  <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Each root is an independently deployed unit</strong><p class="muted xs">Expanding a root browses that service's live deployment. Uploads, ZIP deploys, restarts and deletes live in each service's Files manager — use “Open manager" on the root row.</p></div></div>`;
 }
 
 /** Shared staging for ZIP uploads: init → receive → finalize. */
@@ -1154,87 +1217,211 @@ function fileEditView(): string {
     <div class="soft-banner" style="margin-top:14px">${ico('code', 18)}<div><strong class="small">Save with Ctrl+S</strong><p class="muted xs">Saves write straight to the running deployment. Static files are live immediately; if the app reads files at boot, press Restart app.</p></div></div>`;
 }
 
+/** Folder-tree rows for the FOLDERS sidebar section (lazy-loaded, cached). */
+function fmTree(sid: string, path: string, depth: number): string {
+  const f = filesState();
+  const kids = (f.treeItems[`${sid}|${path}`] ?? []).filter((x) => x.type === 'dir')
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const open = f.treeOpen[path] ?? false;
+  return kids.map((d) => {
+    const childOpen = f.treeOpen[d.path] ?? false;
+    const caret = `<button class="fm-chev ${childOpen ? 'open' : ''}" data-action="filesTree" data-path="${attr(d.path)}" aria-label="Expand ${attr(d.name)}">${ico('arrow', 11)}</button>`;
+    return `<div class="fm-tree-row ${f.path === d.path && f.special === 'none' && f.search === null ? 'selected' : ''}" style="padding-left:${8 + depth * 14}px" data-fm-drop="${attr(d.path)}" data-action="filesOpen" data-path="${attr(d.path)}" role="treeitem" tabindex="0">${caret}<span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="fm-tree-name">${esc(d.name)}</span></div>`
+      + (childOpen ? fmTree(sid, d.path, depth + 1) : '');
+  }).join('');
+}
+
 function appFilesView(s: ServiceRec): string {
   const f = filesState();
-  // Auto-load the current directory on first visit (view fns are sync — the
-  // fetch finishes and re-renders; loadedFor guards against loops). Keyed by
-  // service AND path: switching services must refetch, otherwise the previous
-  // service's cached listing renders under this one. Search mode skips the
-  // auto-load — its results are already in state.
-  if (f.search === null && f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
+  // Auto-load current directory + sidebar snapshot on first visit (view fns
+  // are sync — fetches finish and re-render; loadedFor guards loops). Keyed
+  // by service AND path; search/recent/favorites modes skip the dir auto-load.
+  filesLoadFavs(s.id);
+  if (f.search === null && f.special === 'none' && f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
+  if (!f.usage) void filesUsageLoad(s.id);
   const searching = f.search !== null;
   const creating = f.creating;
   const renaming = f.renaming;
-  const parent = String(f.path || '').split('/').slice(0, -1).join('/');
-  const listItems = searching ? f.searchItems : filesSorted(f.items);
   const selCount = Object.keys(f.selected).length;
-  const rows = (f.error ? [] : listItems).map((it) => {
+  const title = f.special === 'recent' ? 'Recent'
+    : f.special === 'favorites' ? 'Favorites'
+    : searching ? `Search: ${f.search ?? ''}`
+    : f.path ? filesBase(f.path) : 'Home';
+
+  const inSpecial = f.special !== 'none';
+  const listItems = f.special === 'recent'
+    ? (f.usage?.recent ?? [])
+    : f.special === 'favorites'
+      ? f.favs.map((x) => filesFindMeta(x.p) ?? { name: filesBase(x.p), path: x.p, type: x.t, size: 0, modified: '' })
+      : searching ? f.searchItems : filesSorted(f.items);
+
+  /* ── content renderers ── */
+  const fileChip = (it: FmItem, size = 15): string => {
     const k = filesKind(it.name, it.type === 'dir');
-    const chip = `<span class="status-icon ${k.color}" style="width:28px;height:28px;flex:none">${ico(k.icon, 15)}</span>`;
-    const label = it.type === 'dir' ? `${esc(it.name)}/` : esc(it.name);
-    const nameCell = searching
-      ? `<button class="link" data-action="filesOpen" data-path="${attr(it.path)}" data-clear-search="1"><strong>${label}</strong></button>`
-      : it.type === 'dir'
-        ? `<button class="link" data-action="filesOpen" data-path="${attr(it.path)}"><strong>${label}</strong></button>`
-        : `<span class="mono small">${label}</span>`;
-    const meta = searching
-      ? `${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · ${esc(it.path)}`
-      : `${it.type === 'dir' ? 'Folder' : filesBytes(it.size)} · <span title="${attr(it.modified)}">${filesWhen(it.modified)}</span>`;
-    const checked = f.selected[it.path] ? ' checked' : '';
-    const actions = [
-      it.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : '',
-      it.type === 'file' && filesImageExt(it.name) ? btn(`${ico('external', 13)} Preview`, 'filesPreview', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}"`) : '',
-      it.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path="${attr(it.path)}"`) : '',
-      btn('Rename', 'filesRenameAsk', 'btn-small', `data-path="${attr(it.path)}" data-name="${attr(it.name)}"`),
-      btn(`${ico('copy', 13)} Duplicate`, 'filesDuplicate', 'btn-small', `data-path="${attr(it.path)}" data-name="${attr(it.name)}"`),
-      btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(it.path)}" data-id="${s.id}" data-name="${attr(it.name)}"`),
-    ].join('');
-    return `<tr data-file-name="${attr((searching ? it.path : it.name).toLowerCase())}">
-    <td style="width:28px"><input type="checkbox" class="file-sel" data-path="${attr(it.path)}"${checked} /></td>
-    <td class="main-cell"><div class="row" style="gap:10px">${chip}<div><div>${nameCell}</div><div class="muted xs" style="margin-top:2px">${meta}</div></div></div></td>
-    <td style="width:1%;white-space:nowrap" class="muted small">${it.type === 'dir' ? '—' : filesBytes(it.size)}</td>
-    <td style="width:1%;white-space:nowrap" class="muted small" title="${attr(it.modified)}">${filesWhen(it.modified)}</td>
-    <td style="width:1%;white-space:nowrap"><div class="row" style="gap:6px">${actions}</div></td>
+    return `<span class="status-icon ${k.color}" style="width:${size + 13}px;height:${size + 13}px;flex:none">${ico(k.icon, size)}</span>`;
+  };
+  const starBtn = (it: FmItem): string => {
+    const on = filesIsFav(f, it.path);
+    return `<button class="fm-star ${on ? 'on' : ''}" data-action="filesStar" data-path="${attr(it.path)}" data-type="${attr(it.type)}" title="${on ? 'Remove from' : 'Add to'} favorites" aria-label="${on ? 'Unstar' : 'Star'} ${attr(it.name)}">${on ? '&#9733;' : '&#9734;'}</button>`;
+  };
+  const dotsBtn = (it: FmItem): string =>
+    `<button class="iconbtn fm-dots" data-action="filesMenu" data-kind="row" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" aria-label="Actions for ${attr(it.name)}">${ico('dots', 14)}</button>`;
+  const selBox = (it: FmItem): string =>
+    `<input type="checkbox" class="file-sel" data-path="${attr(it.path)}"${f.selected[it.path] ? ' checked' : ''} aria-label="Select ${attr(it.name)}" />`;
+
+  const emptyState = `<div class="fm-empty"><div class="big">${f.special === 'favorites' ? '&#9734;' : f.special === 'recent' ? '&#124;' : '&#9636;'}</div><strong>${searching ? 'No matching files' : f.special === 'favorites' ? 'No favorites yet' : f.special === 'recent' ? 'Nothing recent yet' : 'Nothing here yet'}</strong><span>${searching ? 'Try a shorter term - deep search covers every folder in the release.' : f.special === 'none' ? 'Create a folder or upload files to get started.' : 'Items you star or edit will show up here.'}</span></div>`;
+
+  const gridHtml = `<div class="fm-grid">${listItems.map((it) =>
+    `<div class="fm-card ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-fm-path="${attr(it.path)}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" role="button" tabindex="0" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-fm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">${selBox(it)}${fileChip(it, 17)}<div class="name" title="${attr(it.path)}">${esc(it.name)}</div><div class="meta">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)}</div></div>`).join('')}</div>`;
+
+  const tableHead = `<thead><tr><th style="width:30px"><input type="checkbox" id="filesSelAll" title="Select all" aria-label="Select all" /></th><th>Name</th>${f.view === 'details' ? '<th>Type</th>' : ''}<th style="width:1%;white-space:nowrap">Size</th>${f.view === 'details' ? '<th style="width:1%;white-space:nowrap">Last modified</th>' : ''}<th style="width:36px"></th></tr></thead>`;
+  const rowsHtml = listItems.map((it) => {
+    const searchingRow = searching || inSpecial;
+    const nameCell = it.type === 'dir'
+      ? `<button class="link fm-name" data-action="filesOpen" data-path="${attr(it.path)}"${searchingRow ? ' data-clear-search="1"' : ''}><strong>${esc(it.name)}${it.type === 'dir' ? '/' : ''}</strong></button>`
+      : `<span class="fm-name mono">${esc(it.name)}</span>`;
+    return `<tr class="fm-row ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-fm-path="${attr(it.path)}" data-fm-name="${attr(it.name)}" data-fm-type="${attr(it.type)}" data-fm-size="${it.size}" data-fm-modified="${attr(it.modified)}" data-file-name="${attr((searchingRow ? it.path : it.name).toLowerCase())}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-fm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">
+    <td>${selBox(it)}</td>
+    <td class="main-cell"><div class="row" style="gap:10px;align-items:center">${fileChip(it)}<div class="fm-filename">${nameCell}${starBtn(it)}</div>${searchingRow ? `<span class="muted xs fm-subpath">${esc(it.path)}</span>` : ''}</div></td>
+    ${f.view === 'details' ? `<td class="muted small">${it.type === 'dir' ? 'Folder' : filesExtU(it.name)}</td>` : ''}
+    <td class="muted small" style="white-space:nowrap">${it.type === 'dir' ? '&#8212;' : filesBytes(it.size)}</td>
+    ${f.view === 'details' ? `<td class="muted small" style="white-space:nowrap" title="${attr(it.modified)}">${filesWhen(it.modified)}</td>` : ''}
+    <td style="text-align:right">${dotsBtn(it)}</td>
   </tr>`;
   }).join('');
-  const sortBtn = (key: string, label: string): string =>
-    `<button class="link" data-action="filesSort" data-key="${key}" style="font-weight:600">${label}${f.sortKey === key ? (f.sortDir === 1 ? ' ↑' : ' ↓') : ''}</button>`;
-  const thead = `<thead><tr>
-      <th style="width:28px"><input type="checkbox" id="filesSelAll" title="Select all" /></th>
-      <th>${sortBtn('name', 'Name')}</th>
-      <th style="width:1%;white-space:nowrap">${sortBtn('size', 'Size')}</th>
-      <th style="width:1%;white-space:nowrap">${sortBtn('modified', 'Modified')}</th>
-      <th style="width:1%;white-space:nowrap;text-align:right;padding-right:16px">Actions</th>
-    </tr></thead>`;
+  const tableHtml = `<div class="table-wrap"><table class="table fm-table ${f.view === 'details' ? 'detailed' : 'simple'}">${tableHead}<tbody>${f.error ? `<tr><td colspan="6"><div class="fm-empty"><strong>${esc(f.error)}</strong></div></td></tr>` : rowsHtml || `<tr><td colspan="6">${emptyState}</td></tr>`}</tbody></table></div>`;
+
   const searchBanner = searching
-    ? `<div class="row space" style="padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap"><div class="row" style="gap:8px;flex-wrap:wrap">${ico('search', 14)}<span class="small">Matches for <strong class="mono">${esc(f.search ?? '')}</strong> across the whole release${f.searchTruncated ? ' — results capped, refine the term' : ''}</span></div>${btn('Clear search', 'filesClearSearch', 'btn-small', '')}</div>`
+    ? `<div class="fm-results-head"><div class="row" style="gap:8px;flex-wrap:wrap">${ico('search', 14)}<span class="small">Matches for <strong class="mono">${esc(f.search ?? '')}</strong> across the whole release${f.searchTruncated ? ' - results capped, refine the term' : ''}</span></div>${btn('Clear search', 'filesClearSearch', 'btn-small', '')}</div>`
     : '';
   const bulkBar = selCount > 0
-    ? `<div class="row space" style="padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel-2, rgba(0,0,0,.03));gap:10px;flex-wrap:wrap"><span class="small"><strong>${selCount}</strong> selected</span><span class="row" style="gap:6px">${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}${btn('Clear selection', 'filesClearSel', 'btn-small', '')}</span></div>`
+    ? `<div class="fm-selectionbar"><strong>${selCount} selected</strong><span class="row" style="gap:6px">${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}<button class="fm-clearsel" data-action="filesClearSel" aria-label="Clear selection">&#10005;</button></span></div>`
     : '';
-  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
-    <div><h3 class="section-title">Deployment files</h3><p class="muted xs">Live release of ${esc(s.name)} — browse, rename, duplicate, upload and restart without a redeploy</p></div>
-    <div class="row" style="gap:8px;flex-wrap:wrap">
-      <span class="row" style="gap:6px;margin-right:6px">${ico('plus', 13)}${btn('File', 'filesNew', 'btn-small', `data-kind="file"`)}${btn('Folder', 'filesNew', 'btn-small', `data-kind="folder"`)}${btn('Upload file', 'filesPick', 'btn-small', `data-mode="file"`)}</span>
-      <span class="row" style="gap:6px">${btn(`${ico('storage', 14)} ZIP → extract here`, 'filesPick', 'btn-small', `data-mode="extract"`)}${btn(`${ico('deployments', 14)} ZIP as release`, 'filesPick', 'btn-primary btn-small', `data-mode="release"`)}${btn(`${ico('refresh', 14)} Restart app`, 'filesRestart', 'btn-small', `data-id="${s.id}"`)}</span>
-    </div></div>
+
+  /* ── sidebar ── */
+  const u = f.usage;
+  const quotaPct = u ? Math.min(100, Math.round((u.bytes / (100 * 1024 * 1024)) * 100)) : 0;
+  const treeRootOpen = f.treeOpen[''] ?? false;
+  const sidebar = `<aside class="fm-sidebar ${f.sidebarOpen ? 'open' : ''}" aria-label="File manager navigation">
+    <div class="fm-navlabel">RELEASE</div>
+    <div class="fm-navitem ${!inSpecial && !searching ? 'active' : ''}" data-fm-drop="" data-action="filesHome" role="button" tabindex="0"><span class="fm-ico">${ico('server', 14)}</span> My Files <span class="fm-count">${u ? u.files : ''}</span></div>
+    <div class="fm-section">
+      <div class="fm-navitem ${f.special === 'recent' ? 'active' : ''}" data-action="filesSpecial" data-k="recent" role="button" tabindex="0"><span class="fm-ico">${ico('clock', 14)}</span> Recent</div>
+      <div class="fm-navitem ${f.special === 'favorites' ? 'active' : ''}" data-action="filesSpecial" data-k="favorites" role="button" tabindex="0"><span class="fm-ico">&#9734;</span> Favorites</div>
+    </div>
+    <div class="fm-section fm-folders">
+      <div class="fm-navlabel">FOLDERS <button class="fm-plus" data-action="filesMenu" data-kind="new" data-op-hint="newfolder" aria-label="Create folder">&#43;</button></div>
+      <div class="fm-tree" role="tree">
+        <div class="fm-tree-row ${f.path === '' && !inSpecial && !searching ? 'selected' : ''}" data-fm-drop="" data-action="filesHome" role="treeitem" tabindex="0"><button class="fm-chev ${treeRootOpen ? 'open' : ''}" data-action="filesTree" data-path="" aria-label="Expand tree">${ico('arrow', 11)}</button><span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="fm-tree-name">Home</span></div>
+        ${treeRootOpen ? fmTree(s.id, '', 1) : ''}
+      </div>
+    </div>
+    <div class="fm-storage">
+      <div class="fm-storage-head"><span>Release size</span><small>${u ? `${u.dirs} folders` : ''}</small></div>
+      <div class="fm-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${quotaPct}"><div class="fm-bar" style="width:${quotaPct}%"></div></div>
+      <div class="fm-storage-note">${u ? `${filesBytes(u.bytes)} used &#183; ${u.files} files` : 'Measuring...'}</div>
+    </div>
+  </aside>`;
+
+  /* ── details pane ── */
+  const d = f.details;
+  const detailsPane = `<aside class="fm-rightpane ${d ? 'open' : ''}" aria-label="File details">
+    <div class="fm-details-head"><h3>File details</h3><button class="fm-closebtn" data-action="filesDetailsClose" aria-label="Close details">&#10005;</button></div>
+    ${d ? `<div class="fm-details-body">
+      <div class="fm-details-hero">${fileChip(d, 21)}</div>
+      <div class="fm-details-name mono">${esc(d.name)}</div>
+      <div class="fm-details-type">${d.type === 'dir' ? 'Folder' : filesExtU(d.name)}</div>
+      <dl class="fm-meta">
+        <dt>Path</dt><dd class="mono">${esc(d.path)}</dd>
+        <dt>Size</dt><dd>${d.type === 'dir' ? '&#8212;' : filesBytes(d.size)}</dd>
+        <dt>Modified</dt><dd title="${attr(d.modified)}">${d.modified ? filesWhen(d.modified) : '&#8212;'}</dd>
+      </dl>
+      <div class="fm-details-actions">
+        ${starBtn(d)}
+        ${d.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}"`) : btn('Open', 'filesOpen', 'btn-small', `data-path="${attr(d.path)}"`)}
+        ${d.type === 'file' && filesImageExt(d.name) ? btn('Preview', 'filesPreview', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}"`) : ''}
+        ${d.type === 'file' ? btn('Download', 'fileEditDownload', 'btn-small', `data-path="${attr(d.path)}"`) : ''}
+        ${btn('Rename', 'filesRenameAsk', 'btn-small', `data-path="${attr(d.path)}" data-name="${attr(d.name)}"`)}
+        ${btn('Duplicate', 'filesDuplicate', 'btn-small', `data-path="${attr(d.path)}" data-name="${attr(d.name)}"`)}
+        ${btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}" data-name="${attr(d.name)}"`)}
+      </div>
+    </div>` : `<div class="fm-empty"><div class="big">&#9636;</div><strong>Select a file</strong><span>Details, actions and previews appear here.</span></div>`}
+  </aside>`;
+
+  /* ── floating menus ── */
+  let floatHtml = '';
+  if (f.float) {
+    const rowMenu = f.float.kind === 'row' && f.float.path;
+    const ops = f.float.kind === 'new'
+      ? [['newfile', `${ico('plus', 13)} New file`], ['newfolder', `${ico('projects', 13)} New folder`], ['upload', `${ico('upload', 13)} Upload files`], ['zipextract', `${ico('storage', 13)} ZIP &#8594; extract here`], ['ziprelease', `${ico('deployments', 13)} ZIP as release`]]
+      : f.float.kind === 'more'
+        ? [['refresh', `${ico('refresh', 13)} Refresh`], ['restart', `${ico('deployments', 13)} Restart app`]]
+        : [['edit', `${ico('code', 13)} Edit`], ['preview', `${ico('external', 13)} Preview`], ['download', `${ico('upload', 13)} Download`], ['rename', `${ico('file', 13)} Rename`], ['duplicate', `${ico('copy', 13)} Duplicate`], ['star', `${filesIsFav(f, f.float.path ?? '') ? '&#9733; Unstar' : '&#9734; Star'}`], ['delete', `${ico('close', 13)} Delete`]];
+    const menuOps = rowMenu && f.float.type === 'dir' ? ops.filter(([op]) => !['edit', 'preview', 'download'].includes(op)) : ops;
+    floatHtml = `<div class="fm-menu" style="left:${f.float.x}px;top:${f.float.y}px" role="menu">${menuOps.map(([op, label]) =>
+      `<button class="${op === 'delete' ? 'danger' : op === 'ziprelease' ? 'accent' : ''}" data-action="filesMenuDo" data-op="${op}" data-path="${attr(f.float?.path ?? '')}" data-name="${attr(f.float?.name ?? '')}" data-type="${attr(f.float?.type ?? '')}" role="menuitem">${label}</button>`).join('')}</div>`;
+  }
+
+  const segBtn = (v: string, label: string): string =>
+    `<button class="${f.view === v ? 'active' : ''}" data-action="filesView" data-v="${v}" title="${label} view" aria-label="${label} view" aria-pressed="${f.view === v}">${v === 'list' ? '&#9776;' : v === 'grid' ? '&#8862;' : '&#9776;&#9635;'}</button>`;
+
+  return `${sidebar}
+  <div class="fm-main">
+    <div class="fm-heading">
+      <button class="fm-burger" data-action="filesSidebar" aria-label="Toggle sidebar">&#9776;</button>
+      <div><h3 class="section-title" style="margin:0">${esc(title)}</h3><div class="fm-crumbs">${filesBreadcrumb(f.path)}</div></div>
+      <div class="fm-actions">
+        <button class="fm-lightbtn" data-action="filesMenu" data-kind="new">&#43; New &#9662;</button>
+        <button class="btn btn-primary btn-small" data-action="filesPick" data-mode="file">${ico('upload', 14)} Upload files</button>
+        <button class="iconbtn" data-action="filesMenu" data-kind="more" aria-label="More actions">${ico('dots', 15)}</button>
+      </div>
+    </div>
     <input type="file" id="filesZipInput" hidden ${f.zipMode === 'release' ? 'accept=".zip"' : ''} />
     ${creating ? `<div class="card" style="margin-bottom:14px"><form id="filesCreateForm" class="row" style="gap:10px;padding:4px 0"><input id="filesCreateName" class="mono" style="flex:1" maxlength="200" autocomplete="off" spellcheck="false" placeholder="${creating === 'file' ? 'new-file.js' : 'new-folder'}" /><button class="btn btn-primary btn-small" type="submit">Create ${esc(creating)}</button><button class="btn btn-small" type="button" data-action="filesCancelCreate">Cancel</button></form></div>` : ''}
-    ${renaming ? `<div class="card" style="margin-bottom:14px"><form id="filesRenameForm" class="row" style="gap:10px;padding:4px 0"><span class="muted small" style="white-space:nowrap">Rename <strong class="mono">${esc(renaming.name)}</strong> to</span><input id="filesRenameTarget" class="mono" style="flex:1" maxlength="300" autocomplete="off" spellcheck="false" value="${attr(renaming.name)}" /><button class="btn btn-primary btn-small" type="submit">Rename</button><button class="btn btn-small" type="button" data-action="filesCancelRename">Cancel</button></form><p class="muted xs" style="margin:6px 0 0">Tip: include a folder in the target (e.g. <span class="mono">assets/${esc(renaming.name)}</span>) to move the file there.</p></div>` : ''}
-    <div class="card" style="padding:0;overflow:hidden" id="filesDropCard">
-      <div class="row space" style="padding:12px 16px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap">
-        <div class="row" style="gap:6px;flex-wrap:wrap">${ico('projects', 14)}${filesBreadcrumb(f.path)}${f.path ? btn(`${ico('back', 12)} Up`, 'filesOpen', 'btn-small', `data-path="${attr(parent)}"`) : ''}${f.loading ? badge('Loading…', 'blue') : ''}</div>
-        <form id="filesGlobalSearchForm" class="row" style="gap:6px"><input id="filesSearch" placeholder="Filter here · press Search to search everywhere" autocomplete="off" spellcheck="false" style="max-width:280px" value="${searching ? attr(f.search ?? '') : ''}" />${btn(`${ico('search', 13)} Search`, 'filesSearchGo', 'btn-small', '')}</form>
+    ${renaming ? `<div class="card" style="margin-bottom:14px"><form id="filesRenameForm" class="row" style="gap:10px;padding:4px 0"><span class="muted small" style="white-space:nowrap">Rename <strong class="mono">${esc(renaming.name)}</strong> to</span><input id="filesRenameTarget" class="mono" style="flex:1" maxlength="300" autocomplete="off" spellcheck="false" value="${attr(renaming.name)}" /><button class="btn btn-primary btn-small" type="submit">Rename</button><button class="btn btn-small" type="button" data-action="filesCancelRename">Cancel</button></form><p class="muted xs" style="margin:6px 0 0">Tip: include a folder in the target (e.g. <span class="mono">assets/${esc(renaming.name)}</span>) to move it there. You can also drag rows onto sidebar folders.</p></div>` : ''}
+    <div class="card fm-panel" id="filesDropCard" data-fm-drop="${attr(f.path)}">
+      <div class="fm-panel-head">
+        <div class="fm-panel-head-left">
+          <form id="filesGlobalSearchForm" class="fm-searchrow"><label class="fm-search"><span>&#8902;</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="iconbtn ${f.deep ? 'deepon' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">&#8943;</button></form>
+        </div>
+        <div class="fm-panel-head-right">
+          <select id="filesSortSel" class="fm-sortsel" aria-label="Sort by">
+            <option value="name"${f.sortSel === 'name' ? ' selected' : ''}>Name A&#8211;Z</option>
+            <option value="modified"${f.sortSel === 'modified' ? ' selected' : ''}>Last modified</option>
+            <option value="size"${f.sortSel === 'size' ? ' selected' : ''}>Size</option>
+            <option value="type"${f.sortSel === 'type' ? ' selected' : ''}>Type</option>
+          </select>
+          <div class="fm-segmented" role="group" aria-label="View mode">${segBtn('list', 'List')}${segBtn('grid', 'Grid')}${segBtn('details', 'Details')}</div>
+        </div>
       </div>
       ${searchBanner}
       ${bulkBar}
-      <div class="table-wrap"><table class="table">
-      ${thead}
-      <tbody>${f.error ? `<tr><td colspan="5"><div class="empty"><h3>${esc(f.error)}</h3></div></td></tr>` : rows || `<tr><td colspan="5"><div class="empty"><h3>${searching ? 'No matches' : 'Empty directory'}</h3><p>${searching ? 'Try a shorter or different term — search covers every file and folder in the release.' : 'Upload a ZIP, drag files here, add files, or deploy a release.'}</p></div></td></tr>`}</tbody></table></div>
-      <div class="row" style="padding:8px 16px;border-top:1px solid var(--line)"><span class="muted xs">Drag files anywhere onto this panel to upload them into ${f.path ? `<span class="mono">${esc(f.path)}/</span>` : 'the root'}</span></div>
+      ${f.view === 'grid' && !f.error && listItems.length ? gridHtml : tableHtml}
+      <div class="fm-status"><span>${listItems.length} items${selCount ? ` &#183; ${selCount} selected` : ''}${f.loading ? ' &#183; loading...' : ''}</span><span><b>Live release</b> &#183; <span class="fm-live">&#9679;</span> real files</span></div>
     </div>
-    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart — it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build → health check → route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>`;
+    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart - it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build &#8594; health check &#8594; route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>
+  </div>
+  ${detailsPane}
+  ${floatHtml}`;
 }
+
+/** Double-click handler: folders navigate, files open the editor tab. */
+(window as unknown as { __fmDbl?: (el: HTMLElement) => void }).__fmDbl = (el: HTMLElement): void => {
+  const mode = el.dataset.fmDbl;
+  const path = el.dataset.fmPath ?? '';
+  const name = el.dataset.fmName ?? '';
+  if (!mode || !path) return;
+  if (mode === 'open') {
+    const f = filesState();
+    f.search = null;
+    f.searchItems = [];
+    f.special = 'none';
+    void filesLoad(ui.serviceId as string, path);
+  } else {
+    const sid = ui.serviceId as string;
+    if (sid && path) window.open(`/services/${sid}?edit=${encodeURIComponent(path)}`, '_blank', 'noopener');
+  }
+};
 
 const safePreviewCommands = ['help', 'pwd', 'ls', 'ls -la', 'whoami', 'node --version',
   'npm --version', 'ps', 'date', 'cat package.json', 'git status', 'env', 'clear', 'exit'];
@@ -2241,6 +2428,13 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       f.selected = {};
       f.renaming = null;
       f.creating = null;
+      f.special = 'none';
+      f.details = null;
+      f.float = null;
+      f.treeOpen = {};
+      f.treeItems = {};
+      f.usage = null;
+      f.sidebarOpen = false;
       ui.showPassword = false;
       go('service', null, id);
       break;
@@ -2466,8 +2660,169 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       const sid = ui.serviceId as string;
       if (!sid) break;
       const f = filesState();
-      if (el.dataset.clearSearch === '1') { f.search = null; f.searchItems = []; }
+      if (el.dataset.clearSearch === '1' || f.search !== null) { f.search = null; f.searchItems = []; }
+      f.special = 'none';
+      f.details = null;
       void filesLoad(sid, String(el.dataset.path ?? ''));
+      break;
+    }
+    case 'filesHome': {
+      const sid = ui.serviceId as string;
+      if (!sid) break;
+      const f = filesState();
+      f.search = null;
+      f.searchItems = [];
+      f.special = 'none';
+      f.details = null;
+      void filesLoad(sid, '');
+      break;
+    }
+    case 'filesSpecial': {
+      const f = filesState();
+      f.special = String(el.dataset.k ?? 'none') as FilesState['special'];
+      f.search = null;
+      f.searchItems = [];
+      f.details = null;
+      f.selected = {};
+      render();
+      break;
+    }
+    case 'filesTree': {
+      const sid = ui.serviceId as string;
+      const path = String(el.dataset.path ?? '');
+      if (!sid) break;
+      const f = filesState();
+      if (f.treeOpen[path]) { delete f.treeOpen[path]; render(); break; }
+      f.treeOpen[path] = true;
+      void filesTreeLoad(sid, path);
+      render();
+      break;
+    }
+    case 'filesView': {
+      const f = filesState();
+      f.view = String(el.dataset.v ?? 'list') as FilesState['view'];
+      localStorage.setItem('drevanta.fm.view', f.view);
+      render();
+      break;
+    }
+    case 'filesDeep': {
+      const f = filesState();
+      f.deep = !f.deep;
+      render();
+      const inp = document.getElementById('filesSearch') as HTMLInputElement | null;
+      if (inp) inp.focus();
+      break;
+    }
+    case 'filesSidebar': {
+      filesState().sidebarOpen = !filesState().sidebarOpen;
+      render();
+      break;
+    }
+    case 'filesDetails': {
+      const f = filesState();
+      f.details = { name: String(el.dataset.name ?? ''), path: String(el.dataset.path ?? ''), type: String(el.dataset.type ?? 'file'), size: Number(el.dataset.size ?? 0), modified: String(el.dataset.modified ?? '') };
+      render();
+      break;
+    }
+    case 'filesDetailsClose': {
+      filesState().details = null;
+      render();
+      break;
+    }
+    case 'filesMenu': {
+      const f = filesState();
+      const r = el.getBoundingClientRect();
+      f.float = {
+        kind: String(el.dataset.kind ?? 'row') as 'new' | 'row' | 'more',
+        x: Math.min(r.left, window.innerWidth - 200),
+        y: Math.min(r.bottom + 4, window.innerHeight - 220),
+        path: el.dataset.path, name: el.dataset.name, type: el.dataset.type,
+      };
+      render();
+      break;
+    }
+    case 'filesMenuDo': {
+      const f = filesState();
+      const op = String(el.dataset.op ?? '');
+      const path = String(el.dataset.path ?? '');
+      const name = String(el.dataset.name ?? '');
+      const type = String(el.dataset.type ?? 'file');
+      const sid = ui.serviceId as string;
+      f.float = null;
+      if (op === 'newfile') { f.creating = 'file'; render(); (document.getElementById('filesCreateName') as HTMLInputElement | null)?.focus(); break; }
+      if (op === 'newfolder') { f.creating = 'folder'; render(); (document.getElementById('filesCreateName') as HTMLInputElement | null)?.focus(); break; }
+      if (op === 'upload') { f.zipMode = 'file'; render(); (document.getElementById('filesZipInput') as HTMLInputElement | null)?.click(); break; }
+      if (op === 'zipextract') { f.zipMode = 'extract'; render(); (document.getElementById('filesZipInput') as HTMLInputElement | null)?.click(); break; }
+      if (op === 'ziprelease') { f.zipMode = 'release'; render(); (document.getElementById('filesZipInput') as HTMLInputElement | null)?.click(); break; }
+      if (op === 'refresh') { await filesLoad(sid, f.path); break; }
+      if (op === 'restart') {
+        const ok = await confirmModal('Restart the application container now? Connections drop for a second or two.', false);
+        if (!ok) break;
+        try {
+          const res = await api.serviceFiles.restart(sid);
+          flash(`Restarted ${res.container} (state: ${res.state}).`);
+        } catch (err) {
+          flash(err instanceof ApiError ? err.message : 'Could not restart the service.', true);
+        }
+        break;
+      }
+      if (op === 'edit' && sid && path) { window.open(fileEditUrl(sid, path), '_blank', 'noopener'); break; }
+      if (op === 'preview' && sid && path) { window.open(filesRawUrl(sid, path, true), '_blank', 'noopener'); break; }
+      if (op === 'download' && path) { window.open(`/api/v1/services/${sid}/files/raw?path=${encodeURIComponent(path)}`, '_blank', 'noopener'); break; }
+      if (op === 'rename') { f.renaming = { path, name }; render(); (document.getElementById('filesRenameTarget') as HTMLInputElement | null)?.select(); break; }
+      if (op === 'star') {
+        const i = f.favs.findIndex((x) => x.p === path);
+        if (i >= 0) f.favs.splice(i, 1); else f.favs.push({ p: path, t: type });
+        filesSaveFavs(sid);
+        flash(i >= 0 ? `Removed ${esc(name || path)} from favorites.` : `Starred ${esc(name || path)}.`);
+        render();
+        break;
+      }
+      if (op === 'delete' && sid && path) {
+        const ok = await confirmModal(`Delete ${name || path}? This cannot be undone.`, true);
+        if (!ok) break;
+        try {
+          await api.serviceFiles.remove(sid, path);
+          flash(`Deleted ${esc(name || path)}.`);
+          if (f.details?.path === path) f.details = null;
+          await filesLoad(sid, f.path);
+        } catch (err) {
+          flash(err instanceof ApiError ? err.message : 'Could not delete the file.', true);
+        }
+        break;
+      }
+      render();
+      break;
+    }
+    case 'filesMoveDrop': {
+      // Internal drag: a row was dropped onto a sidebar folder or the root.
+      const sid = ui.serviceId as string;
+      const fromPath = String(el.dataset.from ?? '');
+      const toDir = String(el.dataset.dir ?? '');
+      if (!sid || !fromPath) break;
+      const target = toDir ? `${toDir}/${filesBase(fromPath)}` : filesBase(fromPath);
+      if (target === fromPath) break;
+      try {
+        await api.serviceFiles.rename(sid, fromPath, target);
+        flash(`Moved to ${esc(target)}.`);
+        const f = filesState();
+        f.treeItems = {}; // stale caches after a move
+        await filesLoad(sid, f.path);
+        void filesUsageLoad(sid);
+      } catch (err) {
+        flash(err instanceof ApiError ? err.message : 'Could not move it.', true);
+      }
+      break;
+    }
+    case 'filesStar': {
+      const sid = ui.serviceId as string;
+      const f = filesState();
+      const path = String(el.dataset.path ?? '');
+      const type = String(el.dataset.type ?? 'file');
+      const i = f.favs.findIndex((x) => x.p === path);
+      if (i >= 0) f.favs.splice(i, 1); else f.favs.push({ p: path, t: type });
+      filesSaveFavs(sid);
+      render();
       break;
     }
     case 'filesNew': {
@@ -2544,22 +2899,6 @@ async function doAction(action: string, el: HTMLElement, event: Event): Promise<
       f.zipMode = String(el.dataset.mode ?? 'extract') as FilesState['zipMode'];
       const inp = document.getElementById('filesZipInput') as HTMLInputElement | null;
       inp?.click();
-      break;
-    }
-    case 'filesSort': {
-      const f = filesState();
-      const key = String(el.dataset.key ?? 'name') as FilesState['sortKey'];
-      if (f.sortKey === key) f.sortDir = (f.sortDir * -1) as 1 | -1;
-      else { f.sortKey = key; f.sortDir = 1; }
-      render();
-      break;
-    }
-    case 'filesSearchGo': {
-      const sid = ui.serviceId as string;
-      const inp = document.getElementById('filesSearch') as HTMLInputElement | null;
-      const term = (inp?.value || '').trim();
-      if (!sid || !term) { flash('Type a name to search for first.'); break; }
-      void filesSearchAll(sid, term);
       break;
     }
     case 'filesClearSearch': {
@@ -3202,7 +3541,9 @@ async function handleSubmit(e: Event): Promise<void> {
     const inp = document.getElementById('filesSearch') as HTMLInputElement | null;
     const term = (inp?.value || '').trim();
     e.preventDefault();
-    if (!sid || !term) { if (!term) flash('Type a name to search for first.'); return; }
+    if (!sid) return;
+    if (!term) { flash('Type a name to search for first.'); return; }
+    if (!filesState().deep) { flash('Deep search is off - typing filters the open folder live. Toggle the switch beside the box to search everywhere.'); return; }
     void filesSearchAll(sid, term);
     return;
   }
@@ -3681,6 +4022,12 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 async function onChange(e: Event): Promise<void> {
   const target = e.target as HTMLInputElement;
+  if (target.id === 'filesSortSel') {
+    const f = filesState();
+    f.sortSel = String(target.value ?? 'name') as FilesState['sortSel'];
+    render();
+    return;
+  }
   if (target.id === 'filesSelAll') {
     const f = filesState();
     f.selected = {};
@@ -3815,12 +4162,20 @@ async function onChange(e: Event): Promise<void> {
 function onInput(e: Event): void {
   const target = e.target as HTMLInputElement;
   if (target.id === 'filesSearch') {
+    // Shallow filter is live while deep search is OFF; with deep ON, Enter
+    // submits the release-wide search instead (onSubmit above).
+    if (filesState().deep) return;
     const term = target.value.toLowerCase().trim();
     document.querySelectorAll('tr[data-file-name]').forEach((r) => {
       (r as HTMLElement).hidden = !!term && !(r.getAttribute('data-file-name') || '').includes(term);
     });
+    document.querySelectorAll('.fm-card').forEach((r) => {
+      const n = r.querySelector('.name')?.textContent?.toLowerCase() ?? '';
+      (r as HTMLElement).hidden = !!term && !n.includes(term);
+    });
     return;
   }
+  if (target.id === 'filesSortSel') return;
   if (target.id === 'fileEditor') {
     const fe = ui.fileEdit as FileEditState | null;
     if (fe && !fe.dirty) {
@@ -3857,16 +4212,58 @@ function onInput(e: Event): void {
 function onDragOver(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) { e.preventDefault(); z.classList.add('drag'); }
-  const c = (e.target as HTMLElement).closest('#filesDropCard');
-  if (c) { e.preventDefault(); c.classList.add('drag'); }
+  // File-manager drop targets: the listing panel, sidebar folders, tree rows.
+  const t = (e.target as HTMLElement).closest('[data-fm-drop]');
+  if (t) {
+    e.preventDefault();
+    t.classList.add('fm-dropok');
+  } else {
+    document.querySelectorAll('.fm-dropok').forEach((x) => x.classList.remove('fm-dropok'));
+  }
 }
 function onDragLeave(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) z.classList.remove('drag');
-  const c = (e.target as HTMLElement).closest('#filesDropCard');
-  if (c) c.classList.remove('drag');
+  const t = (e.target as HTMLElement).closest('[data-fm-drop]');
+  if (t) t.classList.remove('fm-dropok');
+}
+function onDragStart(e: DragEvent): void {
+  const row = (e.target as HTMLElement).closest('[data-fm-path]') as HTMLElement | null;
+  if (!row) return;
+  e.dataTransfer?.setData('application/x-fm-path', row.dataset.fmPath ?? '');
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+}
+function onMouseDown(e: MouseEvent): void {
+  // Close the floating New/row/more menu on any click outside it.
+  const f = filesState();
+  if (!f.float) return;
+  const t = e.target as HTMLElement;
+  if (!t.closest('.fm-menu') && !t.closest('[data-action="filesMenu"]')) {
+    f.float = null;
+    render();
+  }
 }
 async function onDrop(e: DragEvent): Promise<void> {
+  document.querySelectorAll('.fm-dropok').forEach((x) => x.classList.remove('fm-dropok'));
+  // Internal move: a dragged row released onto a sidebar folder / tree row / panel.
+  const t = (e.target as HTMLElement).closest('[data-fm-drop]') as HTMLElement | null;
+  const fmPath = e.dataTransfer?.getData('application/x-fm-path');
+  if (t && fmPath) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dir = t.dataset.fmDrop ?? '';
+    const dispatchMove = (): void => {
+      const tmp = document.createElement('button');
+      tmp.dataset.action = 'filesMoveDrop';
+      tmp.dataset.from = fmPath;
+      tmp.dataset.dir = dir;
+      document.body.appendChild(tmp);
+      tmp.click();
+      tmp.remove();
+    };
+    dispatchMove();
+    return;
+  }
   const c = (e.target as HTMLElement).closest('#filesDropCard');
   if (c) {
     e.preventDefault();
@@ -3962,6 +4359,8 @@ export function mountApp(): () => void {
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('dragleave', onDragLeave);
   document.addEventListener('drop', onDrop);
+  document.addEventListener('dragstart', onDragStart);
+  document.addEventListener('mousedown', onMouseDown);
   document.addEventListener('pointerdown', onPointerDown);
   document.addEventListener('pointermove', onPointerMove);
   document.addEventListener('pointerup', endFabDrag);
