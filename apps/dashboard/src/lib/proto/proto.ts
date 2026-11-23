@@ -877,7 +877,7 @@ function filesBreadcrumb(path: string): string {
 async function filesLoad(serviceId: string, path: string): Promise<void> {
   const f = filesState();
   f.path = path;
-  f.loadedFor = path; // set before the first render so the view doesn't re-trigger
+  f.loadedFor = `${serviceId}|${path}`; // set before the first render so the view doesn't re-trigger
   f.loading = true;
   render();
   try {
@@ -1098,8 +1098,10 @@ function fileEditView(): string {
 function appFilesView(s: ServiceRec): string {
   const f = filesState();
   // Auto-load the current directory on first visit (view fns are sync — the
-  // fetch finishes and re-renders; loadedFor guards against loops).
-  if (f.loadedFor !== f.path && !f.loading) void filesLoad(s.id, f.path);
+  // fetch finishes and re-renders; loadedFor guards against loops). Keyed by
+  // service AND path: switching services must refetch, otherwise the previous
+  // service's cached listing renders under this one.
+  if (f.loadedFor !== `${s.id}|${f.path}` && !f.loading) void filesLoad(s.id, f.path);
   const creating = f.creating;
   const parent = String(f.path || '').split('/').slice(0, -1).join('/');
   const rows = (f.error ? [] : f.items).map((it) => {
