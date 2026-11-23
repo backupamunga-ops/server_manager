@@ -846,7 +846,6 @@ function filesSaveFavs(sid: string): void {
 }
 const filesIsFav = (f: FilesState, path: string): boolean => f.favs.some((x) => x.p === path);
 
-const filesBase = (path: string): string => path.split('/').filter(Boolean).pop() ?? path;
 const filesParent = (path: string): string => path.split('/').slice(0, -1).join('/');
 const filesExtU = (name: string): string => {
   const ext = name.includes('.') ? name.split('.').pop()! : '';
@@ -896,13 +895,23 @@ function filesWhen(iso: string): string {
 
 function filesBreadcrumb(path: string): string {
   const segs = String(path || '').split('/').filter(Boolean);
-  const parts = [`<button class="link mono" data-action="filesOpen" data-path="">/</button>`];
-  let acc = '';
-  for (const s of segs) {
-    acc = acc ? `${acc}/${s}` : s;
-    parts.push(`<button class="link mono" data-action="filesOpen" data-path="${attr(acc)}">${esc(s)} /</button>`);
+  const sep = `<span class="dfm-crumb-sep" aria-hidden="true">&#8250;</span>`;
+  const parts: string[] = [];
+  if (!segs.length) {
+    parts.push(`<span class="dfm-crumb current" aria-current="page">Home</span>`);
+    return parts.join('');
   }
-  return parts.join(' ');
+  parts.push(`<button class="link dfm-crumb" data-action="filesOpen" data-path="">Home</button>`);
+  let acc = '';
+  segs.forEach((s, i) => {
+    acc = acc ? `${acc}/${s}` : s;
+    const last = i === segs.length - 1;
+    parts.push(sep);
+    parts.push(last
+      ? `<span class="dfm-crumb current" aria-current="page">${esc(s)}</span>`
+      : `<button class="link dfm-crumb" data-action="filesOpen" data-path="${attr(acc)}">${esc(s)}</button>`);
+  });
+  return parts.join('');
 }
 
 async function filesLoad(serviceId: string, path: string): Promise<void> {
@@ -1263,10 +1272,10 @@ function appFilesView(s: ServiceRec): string {
   const segBtn = (v: string, label: string): string =>
     `<button class="${f.view === v ? 'active' : ''}" data-action="filesView" data-v="${v}" title="${label} view" aria-label="${label} view" aria-pressed="${f.view === v}">${v === 'list' ? '&#9776;' : v === 'grid' ? '&#8862;' : '&#9776;&#9635;'}</button>`;
 
-  return `<div class="row space" style="margin-bottom:16px;flex-wrap:wrap;gap:12px">
-    <div><h3 class="section-title">${esc(f.path ? filesBase(f.path) : 'Home')}</h3><div class="dfm-crumbs">${filesBreadcrumb(f.path)}</div></div>
-    <div class="row" style="gap:8px;flex-wrap:wrap">
-      <button class="dfm-lightbtn" data-action="filesMenu" data-kind="new">&#43; New &#9662;</button>
+  return `<div class="dfm-head">
+    <div class="dfm-crumbs">${filesBreadcrumb(f.path)}</div>
+    <div class="dfm-head-actions">
+      <button class="dfm-lightbtn" data-action="filesMenu" data-kind="new">${ico('plus', 14)} New</button>
       <button class="btn btn-primary btn-small" data-action="filesPick" data-mode="file">${ico('upload', 14)} Upload files</button>
       <button class="iconbtn" data-action="filesMenu" data-kind="more" aria-label="More actions">${ico('dots', 15)}</button>
     </div></div>
@@ -1276,7 +1285,7 @@ function appFilesView(s: ServiceRec): string {
     <div class="card dfm-panel" id="filesDropCard">
       <div class="dfm-panel-head">
         <div class="dfm-panel-head-left">
-          <form id="filesGlobalSearchForm" class="dfm-searchrow"><label class="dfm-search"><span>&#8902;</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="iconbtn ${f.deep ? 'deepon' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">&#8943;</button></form>
+          <form id="filesGlobalSearchForm" class="dfm-searchrow"><label class="dfm-search"><span class="dfm-search-ico">${ico('search', 14)}</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="iconbtn ${f.deep ? 'deepon' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">&#8943;</button></form>
         </div>
         <div class="dfm-panel-head-right">
           <select id="filesSortSel" class="dfm-sortsel" aria-label="Sort by">
@@ -1293,7 +1302,7 @@ function appFilesView(s: ServiceRec): string {
       ${f.view === 'grid' && !f.error && listItems.length ? gridHtml : tableHtml}
       <div class="dfm-status"><span>${listItems.length} items${selCount ? ` &#183; ${selCount} selected` : ''}${f.loading ? ' &#183; loading...' : ''}</span><span><b>Live release</b> &#183; <span class="dfm-live">&#9679;</span> real files</span></div>
     </div>
-    <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart - it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build &#8594; health check &#8594; route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>
+    <div class="dfm-infobox">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart - it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build &#8594; health check &#8594; route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>
   ${floatHtml}`;
 }
 
