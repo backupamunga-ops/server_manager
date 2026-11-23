@@ -1365,7 +1365,7 @@ function appFilesView(s: ServiceRec): string {
   const segBtn = (v: string, label: string): string =>
     `<button class="${f.view === v ? 'active' : ''}" data-action="filesView" data-v="${v}" title="${label} view" aria-label="${label} view" aria-pressed="${f.view === v}">${v === 'list' ? '&#9776;' : v === 'grid' ? '&#8862;' : '&#9776;&#9635;'}</button>`;
 
-  return `${sidebar}
+  return `<div class="fm-shell">${sidebar}
   <div class="fm-main">
     <div class="fm-heading">
       <button class="fm-burger" data-action="filesSidebar" aria-label="Toggle sidebar">&#9776;</button>
@@ -1402,7 +1402,7 @@ function appFilesView(s: ServiceRec): string {
     <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart - it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build &#8594; health check &#8594; route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>
   </div>
   ${detailsPane}
-  ${floatHtml}`;
+  ${floatHtml}</div>`;
 }
 
 /** Double-click handler: folders navigate, files open the editor tab. */
