@@ -1225,8 +1225,8 @@ function fmTree(sid: string, path: string, depth: number): string {
   const open = f.treeOpen[path] ?? false;
   return kids.map((d) => {
     const childOpen = f.treeOpen[d.path] ?? false;
-    const caret = `<button class="fm-chev ${childOpen ? 'open' : ''}" data-action="filesTree" data-path="${attr(d.path)}" aria-label="Expand ${attr(d.name)}">${ico('arrow', 11)}</button>`;
-    return `<div class="fm-tree-row ${f.path === d.path && f.special === 'none' && f.search === null ? 'selected' : ''}" style="padding-left:${8 + depth * 14}px" data-fm-drop="${attr(d.path)}" data-action="filesOpen" data-path="${attr(d.path)}" role="treeitem" tabindex="0">${caret}<span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="fm-tree-name">${esc(d.name)}</span></div>`
+    const caret = `<button class="dfm-chev ${childOpen ? 'open' : ''}" data-action="filesTree" data-path="${attr(d.path)}" aria-label="Expand ${attr(d.name)}">${ico('arrow', 11)}</button>`;
+    return `<div class="dfm-tree-row ${f.path === d.path && f.special === 'none' && f.search === null ? 'selected' : ''}" style="padding-left:${8 + depth * 14}px" data-dfm-drop="${attr(d.path)}" data-action="filesOpen" data-path="${attr(d.path)}" role="treeitem" tabindex="0">${caret}<span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="dfm-tree-name">${esc(d.name)}</span></div>`
       + (childOpen ? fmTree(sid, d.path, depth + 1) : '');
   }).join('');
 }
@@ -1262,81 +1262,81 @@ function appFilesView(s: ServiceRec): string {
   };
   const starBtn = (it: FmItem): string => {
     const on = filesIsFav(f, it.path);
-    return `<button class="fm-star ${on ? 'on' : ''}" data-action="filesStar" data-path="${attr(it.path)}" data-type="${attr(it.type)}" title="${on ? 'Remove from' : 'Add to'} favorites" aria-label="${on ? 'Unstar' : 'Star'} ${attr(it.name)}">${on ? '&#9733;' : '&#9734;'}</button>`;
+    return `<button class="dfm-star ${on ? 'on' : ''}" data-action="filesStar" data-path="${attr(it.path)}" data-type="${attr(it.type)}" title="${on ? 'Remove from' : 'Add to'} favorites" aria-label="${on ? 'Unstar' : 'Star'} ${attr(it.name)}">${on ? '&#9733;' : '&#9734;'}</button>`;
   };
   const dotsBtn = (it: FmItem): string =>
-    `<button class="iconbtn fm-dots" data-action="filesMenu" data-kind="row" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" aria-label="Actions for ${attr(it.name)}">${ico('dots', 14)}</button>`;
+    `<button class="iconbtn dfm-dots" data-action="filesMenu" data-kind="row" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" aria-label="Actions for ${attr(it.name)}">${ico('dots', 14)}</button>`;
   const selBox = (it: FmItem): string =>
     `<input type="checkbox" class="file-sel" data-path="${attr(it.path)}"${f.selected[it.path] ? ' checked' : ''} aria-label="Select ${attr(it.name)}" />`;
 
-  const emptyState = `<div class="fm-empty"><div class="big">${f.special === 'favorites' ? '&#9734;' : f.special === 'recent' ? '&#124;' : '&#9636;'}</div><strong>${searching ? 'No matching files' : f.special === 'favorites' ? 'No favorites yet' : f.special === 'recent' ? 'Nothing recent yet' : 'Nothing here yet'}</strong><span>${searching ? 'Try a shorter term - deep search covers every folder in the release.' : f.special === 'none' ? 'Create a folder or upload files to get started.' : 'Items you star or edit will show up here.'}</span></div>`;
+  const emptyState = `<div class="dfm-empty"><div class="big">${f.special === 'favorites' ? '&#9734;' : f.special === 'recent' ? '&#124;' : '&#9636;'}</div><strong>${searching ? 'No matching files' : f.special === 'favorites' ? 'No favorites yet' : f.special === 'recent' ? 'Nothing recent yet' : 'Nothing here yet'}</strong><span>${searching ? 'Try a shorter term - deep search covers every folder in the release.' : f.special === 'none' ? 'Create a folder or upload files to get started.' : 'Items you star or edit will show up here.'}</span></div>`;
 
-  const gridHtml = `<div class="fm-grid">${listItems.map((it) =>
-    `<div class="fm-card ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-fm-path="${attr(it.path)}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" role="button" tabindex="0" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-fm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">${selBox(it)}${fileChip(it, 17)}<div class="name" title="${attr(it.path)}">${esc(it.name)}</div><div class="meta">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)}</div></div>`).join('')}</div>`;
+  const gridHtml = `<div class="dfm-grid">${listItems.map((it) =>
+    `<div class="dfm-card ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-dfm-path="${attr(it.path)}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" role="button" tabindex="0" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-dfm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">${selBox(it)}${fileChip(it, 17)}<div class="name" title="${attr(it.path)}">${esc(it.name)}</div><div class="meta">${it.type === 'dir' ? 'Folder' : filesBytes(it.size)}</div></div>`).join('')}</div>`;
 
   const tableHead = `<thead><tr><th style="width:30px"><input type="checkbox" id="filesSelAll" title="Select all" aria-label="Select all" /></th><th>Name</th>${f.view === 'details' ? '<th>Type</th>' : ''}<th style="width:1%;white-space:nowrap">Size</th>${f.view === 'details' ? '<th style="width:1%;white-space:nowrap">Last modified</th>' : ''}<th style="width:36px"></th></tr></thead>`;
   const rowsHtml = listItems.map((it) => {
     const searchingRow = searching || inSpecial;
     const nameCell = it.type === 'dir'
-      ? `<button class="link fm-name" data-action="filesOpen" data-path="${attr(it.path)}"${searchingRow ? ' data-clear-search="1"' : ''}><strong>${esc(it.name)}${it.type === 'dir' ? '/' : ''}</strong></button>`
-      : `<span class="fm-name mono">${esc(it.name)}</span>`;
-    return `<tr class="fm-row ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-fm-path="${attr(it.path)}" data-fm-name="${attr(it.name)}" data-fm-type="${attr(it.type)}" data-fm-size="${it.size}" data-fm-modified="${attr(it.modified)}" data-file-name="${attr((searchingRow ? it.path : it.name).toLowerCase())}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-fm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">
+      ? `<button class="link dfm-name" data-action="filesOpen" data-path="${attr(it.path)}"${searchingRow ? ' data-clear-search="1"' : ''}><strong>${esc(it.name)}${it.type === 'dir' ? '/' : ''}</strong></button>`
+      : `<span class="dfm-name mono">${esc(it.name)}</span>`;
+    return `<tr class="dfm-row ${f.selected[it.path] ? 'selected' : ''}" draggable="true" data-dfm-path="${attr(it.path)}" data-dfm-name="${attr(it.name)}" data-dfm-type="${attr(it.type)}" data-dfm-size="${it.size}" data-dfm-modified="${attr(it.modified)}" data-file-name="${attr((searchingRow ? it.path : it.name).toLowerCase())}" data-action="filesDetails" data-path="${attr(it.path)}" data-name="${attr(it.name)}" data-type="${attr(it.type)}" data-size="${it.size}" data-modified="${attr(it.modified)}" ondblclick="window.__fmDbl && window.__fmDbl(this)" data-dfm-dbl="${it.type === 'dir' ? 'open' : 'edit'}">
     <td>${selBox(it)}</td>
-    <td class="main-cell"><div class="row" style="gap:10px;align-items:center">${fileChip(it)}<div class="fm-filename">${nameCell}${starBtn(it)}</div>${searchingRow ? `<span class="muted xs fm-subpath">${esc(it.path)}</span>` : ''}</div></td>
+    <td class="main-cell"><div class="row" style="gap:10px;align-items:center">${fileChip(it)}<div class="dfm-filename">${nameCell}${starBtn(it)}</div>${searchingRow ? `<span class="muted xs dfm-subpath">${esc(it.path)}</span>` : ''}</div></td>
     ${f.view === 'details' ? `<td class="muted small">${it.type === 'dir' ? 'Folder' : filesExtU(it.name)}</td>` : ''}
     <td class="muted small" style="white-space:nowrap">${it.type === 'dir' ? '&#8212;' : filesBytes(it.size)}</td>
     ${f.view === 'details' ? `<td class="muted small" style="white-space:nowrap" title="${attr(it.modified)}">${filesWhen(it.modified)}</td>` : ''}
     <td style="text-align:right">${dotsBtn(it)}</td>
   </tr>`;
   }).join('');
-  const tableHtml = `<div class="table-wrap"><table class="table fm-table ${f.view === 'details' ? 'detailed' : 'simple'}">${tableHead}<tbody>${f.error ? `<tr><td colspan="6"><div class="fm-empty"><strong>${esc(f.error)}</strong></div></td></tr>` : rowsHtml || `<tr><td colspan="6">${emptyState}</td></tr>`}</tbody></table></div>`;
+  const tableHtml = `<div class="table-wrap"><table class="table dfm-table ${f.view === 'details' ? 'detailed' : 'simple'}">${tableHead}<tbody>${f.error ? `<tr><td colspan="6"><div class="dfm-empty"><strong>${esc(f.error)}</strong></div></td></tr>` : rowsHtml || `<tr><td colspan="6">${emptyState}</td></tr>`}</tbody></table></div>`;
 
   const searchBanner = searching
-    ? `<div class="fm-results-head"><div class="row" style="gap:8px;flex-wrap:wrap">${ico('search', 14)}<span class="small">Matches for <strong class="mono">${esc(f.search ?? '')}</strong> across the whole release${f.searchTruncated ? ' - results capped, refine the term' : ''}</span></div>${btn('Clear search', 'filesClearSearch', 'btn-small', '')}</div>`
+    ? `<div class="dfm-results-head"><div class="row" style="gap:8px;flex-wrap:wrap">${ico('search', 14)}<span class="small">Matches for <strong class="mono">${esc(f.search ?? '')}</strong> across the whole release${f.searchTruncated ? ' - results capped, refine the term' : ''}</span></div>${btn('Clear search', 'filesClearSearch', 'btn-small', '')}</div>`
     : '';
   const bulkBar = selCount > 0
-    ? `<div class="fm-selectionbar"><strong>${selCount} selected</strong><span class="row" style="gap:6px">${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}<button class="fm-clearsel" data-action="filesClearSel" aria-label="Clear selection">&#10005;</button></span></div>`
+    ? `<div class="dfm-selectionbar"><strong>${selCount} selected</strong><span class="row" style="gap:6px">${btn('Delete selected', 'filesBulkDelete', 'btn-small', '')}<button class="dfm-clearsel" data-action="filesClearSel" aria-label="Clear selection">&#10005;</button></span></div>`
     : '';
 
   /* ── sidebar ── */
   const u = f.usage;
   const quotaPct = u ? Math.min(100, Math.round((u.bytes / (100 * 1024 * 1024)) * 100)) : 0;
   const treeRootOpen = f.treeOpen[''] ?? false;
-  const sidebar = `<aside class="fm-sidebar ${f.sidebarOpen ? 'open' : ''}" aria-label="File manager navigation">
-    <div class="fm-navlabel">RELEASE</div>
-    <div class="fm-navitem ${!inSpecial && !searching ? 'active' : ''}" data-fm-drop="" data-action="filesHome" role="button" tabindex="0"><span class="fm-ico">${ico('server', 14)}</span> My Files <span class="fm-count">${u ? u.files : ''}</span></div>
-    <div class="fm-section">
-      <div class="fm-navitem ${f.special === 'recent' ? 'active' : ''}" data-action="filesSpecial" data-k="recent" role="button" tabindex="0"><span class="fm-ico">${ico('clock', 14)}</span> Recent</div>
-      <div class="fm-navitem ${f.special === 'favorites' ? 'active' : ''}" data-action="filesSpecial" data-k="favorites" role="button" tabindex="0"><span class="fm-ico">&#9734;</span> Favorites</div>
+  const sidebar = `<aside class="dfm-sidebar ${f.sidebarOpen ? 'open' : ''}" aria-label="File manager navigation">
+    <div class="dfm-navlabel">RELEASE</div>
+    <div class="dfm-navitem ${!inSpecial && !searching ? 'active' : ''}" data-dfm-drop="" data-action="filesHome" role="button" tabindex="0"><span class="dfm-ico">${ico('server', 14)}</span> My Files <span class="dfm-count">${u ? u.files : ''}</span></div>
+    <div class="dfm-section">
+      <div class="dfm-navitem ${f.special === 'recent' ? 'active' : ''}" data-action="filesSpecial" data-k="recent" role="button" tabindex="0"><span class="dfm-ico">${ico('clock', 14)}</span> Recent</div>
+      <div class="dfm-navitem ${f.special === 'favorites' ? 'active' : ''}" data-action="filesSpecial" data-k="favorites" role="button" tabindex="0"><span class="dfm-ico">&#9734;</span> Favorites</div>
     </div>
-    <div class="fm-section fm-folders">
-      <div class="fm-navlabel">FOLDERS <button class="fm-plus" data-action="filesMenu" data-kind="new" data-op-hint="newfolder" aria-label="Create folder">&#43;</button></div>
-      <div class="fm-tree" role="tree">
-        <div class="fm-tree-row ${f.path === '' && !inSpecial && !searching ? 'selected' : ''}" data-fm-drop="" data-action="filesHome" role="treeitem" tabindex="0"><button class="fm-chev ${treeRootOpen ? 'open' : ''}" data-action="filesTree" data-path="" aria-label="Expand tree">${ico('arrow', 11)}</button><span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="fm-tree-name">Home</span></div>
+    <div class="dfm-section dfm-folders">
+      <div class="dfm-navlabel">FOLDERS <button class="dfm-plus" data-action="filesMenu" data-kind="new" data-op-hint="newfolder" aria-label="Create folder">&#43;</button></div>
+      <div class="dfm-tree" role="tree">
+        <div class="dfm-tree-row ${f.path === '' && !inSpecial && !searching ? 'selected' : ''}" data-dfm-drop="" data-action="filesHome" role="treeitem" tabindex="0"><button class="dfm-chev ${treeRootOpen ? 'open' : ''}" data-action="filesTree" data-path="" aria-label="Expand tree">${ico('arrow', 11)}</button><span class="status-icon gold" style="width:20px;height:20px">${ico('projects', 11)}</span><span class="dfm-tree-name">Home</span></div>
         ${treeRootOpen ? fmTree(s.id, '', 1) : ''}
       </div>
     </div>
-    <div class="fm-storage">
-      <div class="fm-storage-head"><span>Release size</span><small>${u ? `${u.dirs} folders` : ''}</small></div>
-      <div class="fm-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${quotaPct}"><div class="fm-bar" style="width:${quotaPct}%"></div></div>
-      <div class="fm-storage-note">${u ? `${filesBytes(u.bytes)} used &#183; ${u.files} files` : 'Measuring...'}</div>
+    <div class="dfm-storage">
+      <div class="dfm-storage-head"><span>Release size</span><small>${u ? `${u.dirs} folders` : ''}</small></div>
+      <div class="dfm-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${quotaPct}"><div class="dfm-bar" style="width:${quotaPct}%"></div></div>
+      <div class="dfm-storage-note">${u ? `${filesBytes(u.bytes)} used &#183; ${u.files} files` : 'Measuring...'}</div>
     </div>
   </aside>`;
 
   /* ── details pane ── */
   const d = f.details;
-  const detailsPane = `<aside class="fm-rightpane ${d ? 'open' : ''}" aria-label="File details">
-    <div class="fm-details-head"><h3>File details</h3><button class="fm-closebtn" data-action="filesDetailsClose" aria-label="Close details">&#10005;</button></div>
-    ${d ? `<div class="fm-details-body">
-      <div class="fm-details-hero">${fileChip(d, 21)}</div>
-      <div class="fm-details-name mono">${esc(d.name)}</div>
-      <div class="fm-details-type">${d.type === 'dir' ? 'Folder' : filesExtU(d.name)}</div>
-      <dl class="fm-meta">
+  const detailsPane = `<aside class="dfm-rightpane ${d ? 'open' : ''}" aria-label="File details">
+    <div class="dfm-details-head"><h3>File details</h3><button class="dfm-closebtn" data-action="filesDetailsClose" aria-label="Close details">&#10005;</button></div>
+    ${d ? `<div class="dfm-details-body">
+      <div class="dfm-details-hero">${fileChip(d, 21)}</div>
+      <div class="dfm-details-name mono">${esc(d.name)}</div>
+      <div class="dfm-details-type">${d.type === 'dir' ? 'Folder' : filesExtU(d.name)}</div>
+      <dl class="dfm-meta">
         <dt>Path</dt><dd class="mono">${esc(d.path)}</dd>
         <dt>Size</dt><dd>${d.type === 'dir' ? '&#8212;' : filesBytes(d.size)}</dd>
         <dt>Modified</dt><dd title="${attr(d.modified)}">${d.modified ? filesWhen(d.modified) : '&#8212;'}</dd>
       </dl>
-      <div class="fm-details-actions">
+      <div class="dfm-details-actions">
         ${starBtn(d)}
         ${d.type === 'file' ? btn('Edit', 'filesEdit', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}"`) : btn('Open', 'filesOpen', 'btn-small', `data-path="${attr(d.path)}"`)}
         ${d.type === 'file' && filesImageExt(d.name) ? btn('Preview', 'filesPreview', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}"`) : ''}
@@ -1345,7 +1345,7 @@ function appFilesView(s: ServiceRec): string {
         ${btn('Duplicate', 'filesDuplicate', 'btn-small', `data-path="${attr(d.path)}" data-name="${attr(d.name)}"`)}
         ${btn('Delete', 'filesDelete', 'btn-small', `data-path="${attr(d.path)}" data-id="${s.id}" data-name="${attr(d.name)}"`)}
       </div>
-    </div>` : `<div class="fm-empty"><div class="big">&#9636;</div><strong>Select a file</strong><span>Details, actions and previews appear here.</span></div>`}
+    </div>` : `<div class="dfm-empty"><div class="big">&#9636;</div><strong>Select a file</strong><span>Details, actions and previews appear here.</span></div>`}
   </aside>`;
 
   /* ── floating menus ── */
@@ -1358,20 +1358,20 @@ function appFilesView(s: ServiceRec): string {
         ? [['refresh', `${ico('refresh', 13)} Refresh`], ['restart', `${ico('deployments', 13)} Restart app`]]
         : [['edit', `${ico('code', 13)} Edit`], ['preview', `${ico('external', 13)} Preview`], ['download', `${ico('upload', 13)} Download`], ['rename', `${ico('file', 13)} Rename`], ['duplicate', `${ico('copy', 13)} Duplicate`], ['star', `${filesIsFav(f, f.float.path ?? '') ? '&#9733; Unstar' : '&#9734; Star'}`], ['delete', `${ico('close', 13)} Delete`]];
     const menuOps = rowMenu && f.float.type === 'dir' ? ops.filter(([op]) => !['edit', 'preview', 'download'].includes(op)) : ops;
-    floatHtml = `<div class="fm-menu" style="left:${f.float.x}px;top:${f.float.y}px" role="menu">${menuOps.map(([op, label]) =>
+    floatHtml = `<div class="dfm-menu" style="left:${f.float.x}px;top:${f.float.y}px" role="menu">${menuOps.map(([op, label]) =>
       `<button class="${op === 'delete' ? 'danger' : op === 'ziprelease' ? 'accent' : ''}" data-action="filesMenuDo" data-op="${op}" data-path="${attr(f.float?.path ?? '')}" data-name="${attr(f.float?.name ?? '')}" data-type="${attr(f.float?.type ?? '')}" role="menuitem">${label}</button>`).join('')}</div>`;
   }
 
   const segBtn = (v: string, label: string): string =>
     `<button class="${f.view === v ? 'active' : ''}" data-action="filesView" data-v="${v}" title="${label} view" aria-label="${label} view" aria-pressed="${f.view === v}">${v === 'list' ? '&#9776;' : v === 'grid' ? '&#8862;' : '&#9776;&#9635;'}</button>`;
 
-  return `<div class="fm-shell">${sidebar}
-  <div class="fm-main">
-    <div class="fm-heading">
-      <button class="fm-burger" data-action="filesSidebar" aria-label="Toggle sidebar">&#9776;</button>
-      <div><h3 class="section-title" style="margin:0">${esc(title)}</h3><div class="fm-crumbs">${filesBreadcrumb(f.path)}</div></div>
-      <div class="fm-actions">
-        <button class="fm-lightbtn" data-action="filesMenu" data-kind="new">&#43; New &#9662;</button>
+  return `<div class="dfm-shell">${sidebar}
+  <div class="dfm-main">
+    <div class="dfm-heading">
+      <button class="dfm-burger" data-action="filesSidebar" aria-label="Toggle sidebar">&#9776;</button>
+      <div><h3 class="section-title" style="margin:0">${esc(title)}</h3><div class="dfm-crumbs">${filesBreadcrumb(f.path)}</div></div>
+      <div class="dfm-actions">
+        <button class="dfm-lightbtn" data-action="filesMenu" data-kind="new">&#43; New &#9662;</button>
         <button class="btn btn-primary btn-small" data-action="filesPick" data-mode="file">${ico('upload', 14)} Upload files</button>
         <button class="iconbtn" data-action="filesMenu" data-kind="more" aria-label="More actions">${ico('dots', 15)}</button>
       </div>
@@ -1379,25 +1379,25 @@ function appFilesView(s: ServiceRec): string {
     <input type="file" id="filesZipInput" hidden ${f.zipMode === 'release' ? 'accept=".zip"' : ''} />
     ${creating ? `<div class="card" style="margin-bottom:14px"><form id="filesCreateForm" class="row" style="gap:10px;padding:4px 0"><input id="filesCreateName" class="mono" style="flex:1" maxlength="200" autocomplete="off" spellcheck="false" placeholder="${creating === 'file' ? 'new-file.js' : 'new-folder'}" /><button class="btn btn-primary btn-small" type="submit">Create ${esc(creating)}</button><button class="btn btn-small" type="button" data-action="filesCancelCreate">Cancel</button></form></div>` : ''}
     ${renaming ? `<div class="card" style="margin-bottom:14px"><form id="filesRenameForm" class="row" style="gap:10px;padding:4px 0"><span class="muted small" style="white-space:nowrap">Rename <strong class="mono">${esc(renaming.name)}</strong> to</span><input id="filesRenameTarget" class="mono" style="flex:1" maxlength="300" autocomplete="off" spellcheck="false" value="${attr(renaming.name)}" /><button class="btn btn-primary btn-small" type="submit">Rename</button><button class="btn btn-small" type="button" data-action="filesCancelRename">Cancel</button></form><p class="muted xs" style="margin:6px 0 0">Tip: include a folder in the target (e.g. <span class="mono">assets/${esc(renaming.name)}</span>) to move it there. You can also drag rows onto sidebar folders.</p></div>` : ''}
-    <div class="card fm-panel" id="filesDropCard" data-fm-drop="${attr(f.path)}">
-      <div class="fm-panel-head">
-        <div class="fm-panel-head-left">
-          <form id="filesGlobalSearchForm" class="fm-searchrow"><label class="fm-search"><span>&#8902;</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="iconbtn ${f.deep ? 'deepon' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">&#8943;</button></form>
+    <div class="card dfm-panel" id="filesDropCard" data-dfm-drop="${attr(f.path)}">
+      <div class="dfm-panel-head">
+        <div class="dfm-panel-head-left">
+          <form id="filesGlobalSearchForm" class="dfm-searchrow"><label class="dfm-search"><span>&#8902;</span><input id="filesSearch" placeholder="${f.deep ? 'Search all folders...' : 'Filter this folder...'}" autocomplete="off" spellcheck="false" value="${searching ? attr(f.search ?? '') : ''}" /></label><button type="button" class="iconbtn ${f.deep ? 'deepon' : ''}" data-action="filesDeep" id="filesDeepBtn" title="${f.deep ? 'Deep search is ON - Enter searches every folder' : 'Deep search is OFF - Enter filters this folder'}" aria-label="Toggle deep search" aria-pressed="${f.deep}">&#8943;</button></form>
         </div>
-        <div class="fm-panel-head-right">
-          <select id="filesSortSel" class="fm-sortsel" aria-label="Sort by">
+        <div class="dfm-panel-head-right">
+          <select id="filesSortSel" class="dfm-sortsel" aria-label="Sort by">
             <option value="name"${f.sortSel === 'name' ? ' selected' : ''}>Name A&#8211;Z</option>
             <option value="modified"${f.sortSel === 'modified' ? ' selected' : ''}>Last modified</option>
             <option value="size"${f.sortSel === 'size' ? ' selected' : ''}>Size</option>
             <option value="type"${f.sortSel === 'type' ? ' selected' : ''}>Type</option>
           </select>
-          <div class="fm-segmented" role="group" aria-label="View mode">${segBtn('list', 'List')}${segBtn('grid', 'Grid')}${segBtn('details', 'Details')}</div>
+          <div class="dfm-segmented" role="group" aria-label="View mode">${segBtn('list', 'List')}${segBtn('grid', 'Grid')}${segBtn('details', 'Details')}</div>
         </div>
       </div>
       ${searchBanner}
       ${bulkBar}
       ${f.view === 'grid' && !f.error && listItems.length ? gridHtml : tableHtml}
-      <div class="fm-status"><span>${listItems.length} items${selCount ? ` &#183; ${selCount} selected` : ''}${f.loading ? ' &#183; loading...' : ''}</span><span><b>Live release</b> &#183; <span class="fm-live">&#9679;</span> real files</span></div>
+      <div class="dfm-status"><span>${listItems.length} items${selCount ? ` &#183; ${selCount} selected` : ''}${f.loading ? ' &#183; loading...' : ''}</span><span><b>Live release</b> &#183; <span class="dfm-live">&#9679;</span> real files</span></div>
     </div>
     <div class="soft-banner" style="margin-top:16px">${ico('code', 18)}<div><strong class="small">Two ways to change code on this service</strong><p class="muted xs"><strong>Hotfix:</strong> extract a ZIP here (or edit files) and press Restart - it patches the current release but a later Redeploy replaces it. <strong>Release:</strong> “ZIP as release" makes the ZIP the stored source and runs the full pipeline (build &#8594; health check &#8594; route switch), exactly like a fresh deploy. Editing opens in a separate tab so you can keep the file browser open.</p></div></div>
   </div>
@@ -1407,9 +1407,9 @@ function appFilesView(s: ServiceRec): string {
 
 /** Double-click handler: folders navigate, files open the editor tab. */
 (window as unknown as { __fmDbl?: (el: HTMLElement) => void }).__fmDbl = (el: HTMLElement): void => {
-  const mode = el.dataset.fmDbl;
-  const path = el.dataset.fmPath ?? '';
-  const name = el.dataset.fmName ?? '';
+  const mode = el.dataset.dfmDbl;
+  const path = el.dataset.dfmPath ?? '';
+  const name = el.dataset.dfmName ?? '';
   if (!mode || !path) return;
   if (mode === 'open') {
     const f = filesState();
@@ -4169,7 +4169,7 @@ function onInput(e: Event): void {
     document.querySelectorAll('tr[data-file-name]').forEach((r) => {
       (r as HTMLElement).hidden = !!term && !(r.getAttribute('data-file-name') || '').includes(term);
     });
-    document.querySelectorAll('.fm-card').forEach((r) => {
+    document.querySelectorAll('.dfm-card').forEach((r) => {
       const n = r.querySelector('.name')?.textContent?.toLowerCase() ?? '';
       (r as HTMLElement).hidden = !!term && !n.includes(term);
     });
@@ -4213,24 +4213,24 @@ function onDragOver(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) { e.preventDefault(); z.classList.add('drag'); }
   // File-manager drop targets: the listing panel, sidebar folders, tree rows.
-  const t = (e.target as HTMLElement).closest('[data-fm-drop]');
+  const t = (e.target as HTMLElement).closest('[data-dfm-drop]');
   if (t) {
     e.preventDefault();
-    t.classList.add('fm-dropok');
+    t.classList.add('dfm-dropok');
   } else {
-    document.querySelectorAll('.fm-dropok').forEach((x) => x.classList.remove('fm-dropok'));
+    document.querySelectorAll('.dfm-dropok').forEach((x) => x.classList.remove('dfm-dropok'));
   }
 }
 function onDragLeave(e: DragEvent): void {
   const z = (e.target as HTMLElement).closest('#zipzone');
   if (z) z.classList.remove('drag');
-  const t = (e.target as HTMLElement).closest('[data-fm-drop]');
-  if (t) t.classList.remove('fm-dropok');
+  const t = (e.target as HTMLElement).closest('[data-dfm-drop]');
+  if (t) t.classList.remove('dfm-dropok');
 }
 function onDragStart(e: DragEvent): void {
-  const row = (e.target as HTMLElement).closest('[data-fm-path]') as HTMLElement | null;
+  const row = (e.target as HTMLElement).closest('[data-dfm-path]') as HTMLElement | null;
   if (!row) return;
-  e.dataTransfer?.setData('application/x-fm-path', row.dataset.fmPath ?? '');
+  e.dataTransfer?.setData('application/x-dfm-path', row.dataset.dfmPath ?? '');
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
 }
 function onMouseDown(e: MouseEvent): void {
@@ -4238,20 +4238,20 @@ function onMouseDown(e: MouseEvent): void {
   const f = filesState();
   if (!f.float) return;
   const t = e.target as HTMLElement;
-  if (!t.closest('.fm-menu') && !t.closest('[data-action="filesMenu"]')) {
+  if (!t.closest('.dfm-menu') && !t.closest('[data-action="filesMenu"]')) {
     f.float = null;
     render();
   }
 }
 async function onDrop(e: DragEvent): Promise<void> {
-  document.querySelectorAll('.fm-dropok').forEach((x) => x.classList.remove('fm-dropok'));
+  document.querySelectorAll('.dfm-dropok').forEach((x) => x.classList.remove('dfm-dropok'));
   // Internal move: a dragged row released onto a sidebar folder / tree row / panel.
-  const t = (e.target as HTMLElement).closest('[data-fm-drop]') as HTMLElement | null;
-  const fmPath = e.dataTransfer?.getData('application/x-fm-path');
+  const t = (e.target as HTMLElement).closest('[data-dfm-drop]') as HTMLElement | null;
+  const fmPath = e.dataTransfer?.getData('application/x-dfm-path');
   if (t && fmPath) {
     e.preventDefault();
     e.stopPropagation();
-    const dir = t.dataset.fmDrop ?? '';
+    const dir = t.dataset.dfmDrop ?? '';
     const dispatchMove = (): void => {
       const tmp = document.createElement('button');
       tmp.dataset.action = 'filesMoveDrop';
